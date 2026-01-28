@@ -1,0 +1,72 @@
+[project]
+name = "mcp-local-rag"
+version = "0.1.0"
+description = "A fully local MCP server for RAG over PDFs, DOCX, and plaintext files with collection-based scoping"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.11"
+authors = [
+    { name = "Jozef833", email = "172046463+Jozef833@users.noreply.github.com" }
+]
+keywords = ["mcp", "rag", "local", "pdf", "embeddings", "vector-search", "copilot"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Text Processing :: Indexing",
+]
+dependencies = [
+    "aiofiles>=25.1.0",
+    "mcp[cli]>=1.26.0",
+    "numpy>=2.4.1",
+    "pydantic==2.12.5",
+    "pymupdf4llm>=0.2.9",
+    "python-docx>=1.2.0",
+    "qdrant-client>=1.16.2",
+    "semantic-text-splitter>=0.29.0",
+    "sentence-transformers>=5.2.2",
+    "torch>=2.10.0",
+]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cpu" }
+
+[project.urls]
+Homepage = "https://github.com/Jozef833/mcp-local-rag"
+Repository = "https://github.com/Jozef833/mcp-local-rag"
+Issues = "https://github.com/Jozef833/mcp-local-rag/issues"
+
+[project.scripts]
+mcp-local-rag = "mcp_local_rag:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mcp_local_rag"]
+
+[tool.hatch.build.targets.sdist]
+include = ["src/mcp_local_rag"]
+
+[dependency-groups]
+dev = [
+    "pip-system-certs>=5.3",
+    "pyright>=1.1.408",
+]
+
+[tool.pyright]
+typeCheckingMode = "strict"
+pythonVersion = "3.11"
+include = ["src"]

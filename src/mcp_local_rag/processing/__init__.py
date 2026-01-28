@@ -1,0 +1,31 @@
+from mcp_local_rag.processing.chunking import chunk_text
+from mcp_local_rag.processing.embeddings import (
+    embed_query,
+    embed_texts,
+    get_embedding_dimension,
+    get_embedding_model,
+)
+from mcp_local_rag.processing.extractors import (
+    compute_file_hash,
+    extract_document,
+    ExtractedDocument,
+    is_supported_file,
+)
+from mcp_local_rag.processing.ocr import (
+    needs_ocr,
+    ocr_pdf_pages,
+)
+
+__all__ = [
+    "chunk_text",
+    "compute_file_hash",
+    "embed_query",
+    "embed_texts",
+    "extract_document",
+    "ExtractedDocument",
+    "get_embedding_dimension",
+    "get_embedding_model",
+    "is_supported_file",
+    "needs_ocr",
+    "ocr_pdf_pages",
+]

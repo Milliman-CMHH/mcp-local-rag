@@ -1,0 +1,20 @@
+data/
+.mcp-local-rag/
+
+# Nix
+result
+.pre-commit-config.yaml
+
+# Editor
+.vscode/
+
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
