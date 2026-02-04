@@ -61,5 +61,5 @@ def register_tools(mcp: FastMCP[AppContext]) -> None:
     )
     mcp.add_tool(
         fn=get_document_content,
-        description="Get all chunked text content from a specific document.",
+        description="Saves the content of an indexed document to a Markdown file.",
     )

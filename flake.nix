@@ -58,7 +58,7 @@
           };
 
           # Construct the Python package set
-          python = pkgs.python314;
+          python = pkgs.python313;
 
           pythonSet =
             (pkgs.callPackage pyproject-nix.build.packages {
@@ -156,7 +156,7 @@
             };
 
             nativeBuildInputs = with pkgs; [
-              python314
+              python313
             ];
 
             inherit (pre-commit-check) shellHook;

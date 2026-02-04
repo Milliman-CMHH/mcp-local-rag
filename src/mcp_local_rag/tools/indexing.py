@@ -73,7 +73,7 @@ async def _index_single_file(
                 )
 
     try:
-        doc = await extract_document(file_path)
+        doc = await extract_document(file_path, gemini_client=app.gemini_client)
     except Exception as e:
         return IndexResult(False, f"Extraction failed for {file_path.name}: {e}")
 

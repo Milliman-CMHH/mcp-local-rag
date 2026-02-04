@@ -11,10 +11,6 @@ from mcp_local_rag.processing.extractors import (
     ExtractedDocument,
     is_supported_file,
 )
-from mcp_local_rag.processing.ocr import (
-    needs_ocr,
-    ocr_pdf_pages,
-)
 
 __all__ = [
     "chunk_text",
@@ -26,6 +22,4 @@ __all__ = [
     "get_embedding_dimension",
     "get_embedding_model",
     "is_supported_file",
-    "needs_ocr",
-    "ocr_pdf_pages",
 ]

@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "A fully local MCP server for RAG over PDFs, DOCX, and plaintext files with collection-based scoping"
 readme = "README.md"
 license = { text = "MIT" }
-requires-python = ">=3.11"
+requires-python = ">=3.11,<3.14"
 authors = [
     { name = "Jozef833", email = "172046463+Jozef833@users.noreply.github.com" }
 ]
@@ -17,17 +17,18 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
-    "Programming Language :: Python :: 3.14",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
     "Topic :: Text Processing :: Indexing",
 ]
 dependencies = [
     "aiofiles>=25.1.0",
+    "google-genai[aiohttp]>=1.61.0",
+    "markitdown[docx]>=0.1.4",
     "mcp[cli]>=1.26.0",
     "numpy>=2.4.1",
-    "pydantic==2.12.5",
+    "pip-system-certs>=5.3",
+    "pydantic>=2.12.5",
     "pymupdf4llm>=0.2.9",
-    "python-docx>=1.2.0",
     "qdrant-client>=1.16.2",
     "semantic-text-splitter>=0.29.0",
     "sentence-transformers>=5.2.2",
@@ -62,7 +63,6 @@ include = ["src/mcp_local_rag"]
 
 [dependency-groups]
 dev = [
-    "pip-system-certs>=5.3",
     "pyright>=1.1.408",
 ]
 

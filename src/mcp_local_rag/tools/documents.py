@@ -39,7 +39,9 @@ async def list_documents(collection: str, ctx: Ctx) -> list[DocumentSummary]:
     ]
 
 
-async def get_document_content(file_path: str, collection: str, ctx: Ctx) -> list[str]:
+async def get_document_content(
+    file_path: str, collection: str, output_path: str, ctx: Ctx
+) -> str:
     app = get_app(ctx)
     abs_path = str(Path(file_path).expanduser().resolve())
     doc = app.metadata_store.get_document_by_path(abs_path, collection)
@@ -49,4 +51,11 @@ async def get_document_content(file_path: str, collection: str, ctx: Ctx) -> lis
 
     chunks = app.vector_store.get_document_chunks(doc.doc_id)
 
-    return [chunk.text for chunk in chunks]
+    output_file = Path(output_path).expanduser().resolve()
+    output_file.parent.mkdir(parents=True, exist_ok=True)
+    markdown_content = "\n\n".join(chunk.text for chunk in chunks)
+    output_file.write_text(
+        markdown_content, encoding="utf-8", errors="backslashreplace"
+    )
+
+    return str(output_file)
