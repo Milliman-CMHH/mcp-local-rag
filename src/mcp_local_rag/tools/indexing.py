@@ -1,4 +1,4 @@
-import uuid
+import hashlib
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -11,8 +11,19 @@ from mcp_local_rag.processing import (
     compute_file_hash,
     embed_texts,
     extract_document,
+    get_file_mtime,
     is_supported_file,
 )
+
+
+def make_doc_id(file_path: str, collection: str) -> str:
+    """Generate deterministic doc_id from file path and collection.
+
+    This ensures that re-indexing the same file overwrites orphaned chunks
+    if a previous indexing was interrupted.
+    """
+    key = f"{collection}\x00{file_path}"
+    return hashlib.sha256(key.encode()).hexdigest()[:16]
 
 
 class DirectoryNotFoundError(Exception):
@@ -63,11 +74,21 @@ async def _index_single_file(
 
     abs_path = str(file_path.resolve())
 
+    doc_id = make_doc_id(abs_path, collection)
+    current_mtime = get_file_mtime(file_path)
+
     if not force:
         existing = app.metadata_store.get_document_by_path(abs_path, collection)
         if existing:
+            if existing.file_mtime == current_mtime:
+                return IndexResult(
+                    True, f"Already indexed (unchanged): {file_path.name}"
+                )
+            # mtime changed, verify with hash
             current_hash = compute_file_hash(file_path)
             if current_hash == existing.file_hash:
+                # Content unchanged, just update mtime
+                app.metadata_store.update_document_mtime(existing.doc_id, current_mtime)
                 return IndexResult(
                     True, f"Already indexed (unchanged): {file_path.name}"
                 )
@@ -81,12 +102,8 @@ async def _index_single_file(
     if not chunks:
         return IndexResult(False, f"No content extracted from: {file_path.name}")
 
-    doc_id = f"{collection}_{uuid.uuid4().hex[:12]}"
-
-    existing = app.metadata_store.get_document_by_path(abs_path, collection)
-    if existing:
-        app.vector_store.delete_document_chunks(existing.doc_id)
-        app.metadata_store.remove_document(existing.doc_id)
+    # Remove existing chunks (for example, if previous indexing was interrupted and retried)
+    app.vector_store.delete_document_chunks(doc_id)
 
     embeddings = embed_texts(chunks)
 
@@ -96,6 +113,7 @@ async def _index_single_file(
         doc_id=doc_id,
         file_path=abs_path,
         file_hash=doc.file_hash,
+        file_mtime=current_mtime,
         file_type=doc.file_type,
         collection=collection,
         chunk_count=len(chunks),

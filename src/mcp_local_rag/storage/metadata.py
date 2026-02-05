@@ -20,6 +20,7 @@ class DocumentInfo:
     doc_id: str
     file_path: str
     file_hash: str
+    file_mtime: float
     file_type: str
     collection: str
     chunk_count: int
@@ -45,6 +46,7 @@ class MetadataStore:
                     doc_id TEXT PRIMARY KEY,
                     file_path TEXT NOT NULL,
                     file_hash TEXT NOT NULL,
+                    file_mtime REAL NOT NULL DEFAULT 0,
                     file_type TEXT NOT NULL,
                     collection TEXT NOT NULL,
                     chunk_count INTEGER NOT NULL DEFAULT 0,
@@ -140,6 +142,7 @@ class MetadataStore:
         doc_id: str,
         file_path: str,
         file_hash: str,
+        file_mtime: float,
         file_type: str,
         collection: str,
         chunk_count: int,
@@ -148,10 +151,18 @@ class MetadataStore:
             conn.execute(
                 """
                 INSERT OR REPLACE INTO documents
-                (doc_id, file_path, file_hash, file_type, collection, chunk_count, indexed_at)
-                VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                (doc_id, file_path, file_hash, file_mtime, file_type, collection, chunk_count, indexed_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
                 """,
-                (doc_id, file_path, file_hash, file_type, collection, chunk_count),
+                (
+                    doc_id,
+                    file_path,
+                    file_hash,
+                    file_mtime,
+                    file_type,
+                    collection,
+                    chunk_count,
+                ),
             )
 
     def remove_document(self, doc_id: str) -> bool:
@@ -172,6 +183,7 @@ class MetadataStore:
                 doc_id=row["doc_id"],
                 file_path=row["file_path"],
                 file_hash=row["file_hash"],
+                file_mtime=row["file_mtime"] or 0.0,
                 file_type=row["file_type"],
                 collection=row["collection"],
                 chunk_count=row["chunk_count"],
@@ -194,6 +206,7 @@ class MetadataStore:
                 doc_id=row["doc_id"],
                 file_path=row["file_path"],
                 file_hash=row["file_hash"],
+                file_mtime=row["file_mtime"] or 0.0,
                 file_type=row["file_type"],
                 collection=row["collection"],
                 chunk_count=row["chunk_count"],
@@ -217,6 +230,7 @@ class MetadataStore:
                     doc_id=row["doc_id"],
                     file_path=row["file_path"],
                     file_hash=row["file_hash"],
+                    file_mtime=row["file_mtime"] or 0.0,
                     file_type=row["file_type"],
                     collection=row["collection"],
                     chunk_count=row["chunk_count"],
@@ -232,3 +246,10 @@ class MetadataStore:
                 (file_path, collection),
             ).fetchone()
             return row["file_hash"] if row else None
+
+    def update_document_mtime(self, doc_id: str, file_mtime: float) -> None:
+        with self._get_connection() as conn:
+            conn.execute(
+                "UPDATE documents SET file_mtime = ? WHERE doc_id = ?",
+                (file_mtime, doc_id),
+            )

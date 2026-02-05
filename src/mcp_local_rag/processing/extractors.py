@@ -39,6 +39,10 @@ def compute_file_hash(file_path: Path) -> str:
         return hashlib.file_digest(f, "sha256").hexdigest()
 
 
+def get_file_mtime(file_path: Path) -> float:
+    return file_path.stat().st_mtime
+
+
 def _convert_pdf_page_to_bytes(
     file_path: Path,
     page_index: int,
