@@ -3,7 +3,7 @@ name = "mcp-local-rag"
 version = "0.1.0"
 description = "Local MCP server for RAG over PDFs, DOCX, and plaintext files."
 readme = "README.md"
-license = { text = "MIT" }
+license = { text = "AGPL-3.0-or-later" }
 requires-python = ">=3.11,<3.14"
 authors = [
     { name = "Jozef833", email = "172046463+Jozef833@users.noreply.github.com" }
@@ -12,7 +12,7 @@ keywords = ["mcp", "rag", "local", "pdf", "docx"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
+    "License :: OSI Approved :: GNU Affero General Public License v3 or later (AGPLv3+)",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
@@ -62,6 +62,7 @@ include = ["src/mcp_local_rag"]
 
 [dependency-groups]
 dev = [
+    "pip-licenses>=5.5.1",
     "pyright>=1.1.408",
 ]
 
