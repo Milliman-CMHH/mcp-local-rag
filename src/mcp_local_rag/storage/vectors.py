@@ -11,6 +11,7 @@ from qdrant_client.models import (
     FieldCondition,
     Filter,
     MatchValue,
+    PayloadSchemaType,
     PointStruct,
     VectorParams,
 )
@@ -59,6 +60,26 @@ class VectorStore:
             self.client.create_collection(
                 collection_name=self.COLLECTION_NAME,
                 vectors_config=VectorParams(size=dim, distance=Distance.COSINE),
+            )
+        self._ensure_payload_indexes()
+
+    def _ensure_payload_indexes(self) -> None:
+        info = self.client.get_collection(self.COLLECTION_NAME)
+        existing_indexes: set[str] = (
+            set(info.payload_schema.keys()) if info.payload_schema else set()
+        )
+
+        if "collection" not in existing_indexes:
+            self.client.create_payload_index(
+                collection_name=self.COLLECTION_NAME,
+                field_name="collection",
+                field_schema=PayloadSchemaType.KEYWORD,
+            )
+        if "doc_id" not in existing_indexes:
+            self.client.create_payload_index(
+                collection_name=self.COLLECTION_NAME,
+                field_name="doc_id",
+                field_schema=PayloadSchemaType.KEYWORD,
             )
 
     def add_chunks(

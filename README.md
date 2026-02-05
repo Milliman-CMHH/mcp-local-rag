@@ -1,22 +1,10 @@
 # mcp-local-rag
 
-Fully local MCP server for RAG over PDFs, DOCX, and plaintext files.
+Local MCP server for RAG over PDFs, DOCX, and plaintext files.
 
 ## Requirements
 
-To process scanned PDFs, install [Tesseract] for OCR support. Text-based PDFs, DOCX, and plaintext files work without it.
-
-### Windows
-
-1. Run:
-
-    ```pwsh
-    winget install -e --id UB-Mannheim.TesseractOCR
-    ```
-
-1. Add the tesseract folder to your PATH: `C:\Users\<User>\AppData\Local\Programs\Tesseract-OCR`
-
-1. Restart VS Code to refresh environment variables
+To process scanned PDFs, set the `GEMINI_API_KEY` environment variable for OCR support. Text-based PDFs, DOCX, and plaintext files work without it.
 
 ## Data Storage
 
@@ -65,5 +53,3 @@ If you run into SSL errors (Zscaler), you can try:
   }
 }
 ```
-
-[Tesseract]: https://github.com/tesseract-ocr/tesseract

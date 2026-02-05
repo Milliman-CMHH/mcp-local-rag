@@ -149,7 +149,7 @@ async def extract_pdf(
     semaphore = asyncio.Semaphore(16)
 
     for page_index, page in enumerate(doc.pages()):  # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType, reportUnknownVariableType]
-        if should_ocr_page(page) and gemini_client is not None:  # pyright: ignore[reportUnknownArgumentType]
+        if gemini_client is not None and should_ocr_page(page):  # pyright: ignore[reportUnknownArgumentType]
             md_page = asyncio.create_task(
                 _gemini_ocr_pdf_page_with_retry(
                     file_path=file_path,
