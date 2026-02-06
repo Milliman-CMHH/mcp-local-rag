@@ -1,6 +1,6 @@
 data/
 .env
-.mcp-local-rag/
+mcp-local-rag/
 
 # Nix
 result

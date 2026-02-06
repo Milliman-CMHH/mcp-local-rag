@@ -4,7 +4,7 @@ from pathlib import Path
 
 CHUNK_OVERLAP = int(os.environ.get("MCP_LOCAL_RAG_CHUNK_OVERLAP", "50"))
 CHUNK_SIZE = int(os.environ.get("MCP_LOCAL_RAG_CHUNK_SIZE", "512"))
-DATA_DIR = Path(os.environ.get("MCP_LOCAL_RAG_DATA_DIR", ".")) / ".mcp-local-rag"
+DATA_DIR = Path(os.environ.get("MCP_LOCAL_RAG_DATA_DIR", os.environ.get("LOCALAPPDATA", "."))) / "mcp-local-rag"
 EMBEDDING_MODEL = os.environ.get(
     "MCP_LOCAL_RAG_EMBEDDING_MODEL", "BAAI/bge-small-en-v1.5"
 )
