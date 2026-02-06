@@ -8,7 +8,7 @@ To process scanned PDFs, set the `GEMINI_API_KEY` environment variable for OCR s
 
 ## Data Storage
 
-By default, the server stores data in `%LOCALAPPDATA%\mcp-local-rag\`:
+By default, the server stores data in `%LOCALAPPDATA%\mcp-local-rag\` on Windows, or `./mcp-local-rag` in the current directory on other systems:
 
 - `metadata.db` - SQLite database for document/collection metadata
 - `qdrant/` - Vector database for embeddings
