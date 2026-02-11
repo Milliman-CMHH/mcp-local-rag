@@ -1,10 +1,11 @@
+import asyncio
 import hashlib
-from dataclasses import dataclass
+import logging
 from pathlib import Path
 
 from pydantic import BaseModel
 
-from mcp_local_rag.config import SUPPORTED_EXTENSIONS
+from mcp_local_rag.config import MAX_CONCURRENT_FILES, SUPPORTED_EXTENSIONS
 from mcp_local_rag.context import AppContext, Ctx, get_app
 from mcp_local_rag.processing import (
     chunk_text,
@@ -14,6 +15,8 @@ from mcp_local_rag.processing import (
     get_file_mtime,
     is_supported_file,
 )
+
+logger = logging.getLogger("mcp_local_rag.tools.indexing")
 
 
 def make_doc_id(file_path: str, collection: str) -> str:
@@ -53,73 +56,112 @@ class FileIndexResult(BaseModel):
     message: str | None = None
 
 
-@dataclass
-class IndexResult:
-    success: bool
-    message: str
-    chunk_count: int | None = None
-
-
 async def _index_single_file(
     app: AppContext,
     file_path: Path,
     collection: str,
     force: bool,
-) -> IndexResult:
-    if not file_path.exists():
-        return IndexResult(False, "File not found")
+    semaphore: asyncio.Semaphore,
+) -> FileIndexResult:
+    async with semaphore:
+        if not file_path.exists():
+            return FileIndexResult(
+                file_path=str(file_path), success=False, message="File not found"
+            )
 
-    if not is_supported_file(file_path):
-        return IndexResult(False, f"Unsupported file type: {file_path.suffix}")
+        if not is_supported_file(file_path):
+            return FileIndexResult(
+                file_path=str(file_path),
+                success=False,
+                message=f"Unsupported file type: {file_path.suffix}",
+            )
 
-    abs_path = str(file_path.resolve())
+        abs_path = str(file_path.resolve())
 
-    doc_id = make_doc_id(abs_path, collection)
-    current_mtime = get_file_mtime(file_path)
+        doc_id = make_doc_id(abs_path, collection)
+        current_mtime = get_file_mtime(file_path)
 
-    if not force:
-        existing = app.metadata_store.get_document_by_path(abs_path, collection)
-        if existing:
-            if existing.file_mtime == current_mtime:
-                return IndexResult(
-                    True, f"Already indexed (unchanged): {file_path.name}"
+        if not force:
+            existing = app.metadata_store.get_document_by_path(abs_path, collection)
+            if existing:
+                if existing.file_mtime == current_mtime:
+                    logger.info("[%s] Skipped (unchanged)", file_path.name)
+                    return FileIndexResult(file_path=str(file_path), success=True)
+                # mtime changed, verify with hash
+                current_hash = compute_file_hash(file_path)
+                if current_hash == existing.file_hash:
+                    # Content unchanged, just update mtime
+                    app.metadata_store.update_document_mtime(
+                        existing.doc_id, current_mtime
+                    )
+                    logger.info("[%s] Skipped (unchanged)", file_path.name)
+                    return FileIndexResult(file_path=str(file_path), success=True)
+
+        logger.info("[%s] Indexing into collection '%s'", file_path.name, collection)
+
+        try:
+            doc = await extract_document(
+                file_path,
+                metadata_store=app.metadata_store,
+                gemini_client=app.gemini_client,
+                gemini_semaphore=app.gemini_semaphore,
+                force=force,
+            )
+        except Exception as e:
+            logger.error("[%s] Extraction failed: %s", file_path.name, e)
+            return FileIndexResult(
+                file_path=str(file_path),
+                success=False,
+                message=f"Extraction failed for {file_path.name}: {e}",
+            )
+
+        try:
+            chunks = chunk_text(doc.content)
+            if not chunks:
+                logger.warning("[%s] No content extracted", file_path.name)
+                return FileIndexResult(
+                    file_path=str(file_path),
+                    success=False,
+                    message=f"No content extracted from: {file_path.name}",
                 )
-            # mtime changed, verify with hash
-            current_hash = compute_file_hash(file_path)
-            if current_hash == existing.file_hash:
-                # Content unchanged, just update mtime
-                app.metadata_store.update_document_mtime(existing.doc_id, current_mtime)
-                return IndexResult(
-                    True, f"Already indexed (unchanged): {file_path.name}"
-                )
 
-    try:
-        doc = await extract_document(file_path, gemini_client=app.gemini_client)
-    except Exception as e:
-        return IndexResult(False, f"Extraction failed for {file_path.name}: {e}")
+            logger.info(
+                "[%s] Chunked into %d chunks, embedding...",
+                file_path.name,
+                len(chunks),
+            )
 
-    chunks = chunk_text(doc.content)
-    if not chunks:
-        return IndexResult(False, f"No content extracted from: {file_path.name}")
+            # Remove existing chunks (if previous indexing was interrupted and retried)
+            app.vector_store.delete_document_chunks(doc_id)
 
-    # Remove existing chunks (for example, if previous indexing was interrupted and retried)
-    app.vector_store.delete_document_chunks(doc_id)
+            embeddings = embed_texts(chunks)
 
-    embeddings = embed_texts(chunks)
+            app.vector_store.add_chunks(
+                chunks, embeddings, doc_id, abs_path, collection
+            )
 
-    app.vector_store.add_chunks(chunks, embeddings, doc_id, abs_path, collection)
+            app.metadata_store.add_document(
+                doc_id=doc_id,
+                file_path=abs_path,
+                file_hash=doc.file_hash,
+                file_mtime=current_mtime,
+                file_type=doc.file_type,
+                collection=collection,
+                chunk_count=len(chunks),
+            )
+        except Exception as e:
+            logger.error("[%s] Indexing failed: %s", file_path.name, e)
+            return FileIndexResult(
+                file_path=str(file_path),
+                success=False,
+                message=f"Indexing failed for {file_path.name}: {e}",
+            )
 
-    app.metadata_store.add_document(
-        doc_id=doc_id,
-        file_path=abs_path,
-        file_hash=doc.file_hash,
-        file_mtime=current_mtime,
-        file_type=doc.file_type,
-        collection=collection,
-        chunk_count=len(chunks),
-    )
+        # Conversion + indexing succeeded — clear the page cache for this file
+        app.metadata_store.clear_page_cache(doc.file_hash)
 
-    return IndexResult(True, f"Indexed: {file_path.name}", len(chunks))
+        logger.info("[%s] Indexed: %d chunks stored", file_path.name, len(chunks))
+        return FileIndexResult(file_path=str(file_path), success=True)
 
 
 async def index_files(
@@ -133,18 +175,19 @@ async def index_files(
     if not app.metadata_store.collection_exists(collection):
         app.metadata_store.create_collection(collection)
 
-    results: list[FileIndexResult] = []
+    logger.info("Indexing %d file(s) into collection '%s'", len(file_paths), collection)
 
-    for path_str in file_paths:
-        path = Path(path_str).expanduser()
-        result = await _index_single_file(app, path, collection, force)
-        results.append(
-            FileIndexResult(
-                file_path=str(path),
-                success=result.success,
-                message=None if result.success else result.message,
-            )
+    semaphore = asyncio.Semaphore(MAX_CONCURRENT_FILES)
+    paths = [Path(p).expanduser() for p in file_paths]
+    results = list(
+        await asyncio.gather(
+            *[_index_single_file(app, p, collection, force, semaphore) for p in paths]
         )
+    )
+
+    succeeded = sum(1 for r in results if r.success)
+    failed = len(results) - succeeded
+    logger.info("Indexing complete: %d succeeded, %d failed", succeeded, failed)
 
     return results
 
@@ -180,17 +223,28 @@ async def index_directory(
     if not supported_files:
         raise NoSupportedFilesError(str(directory), list(SUPPORTED_EXTENSIONS.keys()))
 
-    results: list[FileIndexResult] = []
+    logger.info(
+        "Indexing directory %s: %d supported file(s) into collection '%s'",
+        directory,
+        len(supported_files),
+        collection,
+    )
 
-    for path in supported_files:
-        result = await _index_single_file(app, path, collection, force)
-        results.append(
-            FileIndexResult(
-                file_path=str(path),
-                success=result.success,
-                message=None if result.success else result.message,
-            )
+    semaphore = asyncio.Semaphore(MAX_CONCURRENT_FILES)
+    results = list(
+        await asyncio.gather(
+            *[
+                _index_single_file(app, p, collection, force, semaphore)
+                for p in supported_files
+            ]
         )
+    )
+
+    succeeded = sum(1 for r in results if r.success)
+    failed = len(results) - succeeded
+    logger.info(
+        "Directory indexing complete: %d succeeded, %d failed", succeeded, failed
+    )
 
     return results
 
@@ -213,6 +267,7 @@ async def remove_documents(
             )
         else:
             app.vector_store.delete_document_chunks(doc.doc_id)
+            app.metadata_store.clear_page_cache(doc.file_hash)
             app.metadata_store.remove_document(doc.doc_id)
             results.append(FileIndexResult(file_path=file_path, success=True))
 

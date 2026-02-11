@@ -1,3 +1,4 @@
+import asyncio
 from dataclasses import dataclass
 
 from google import genai
@@ -13,6 +14,7 @@ from mcp_local_rag.storage.vectors import VectorStore
 @dataclass
 class AppContext:
     gemini_client: genai.Client | None
+    gemini_semaphore: asyncio.Semaphore
     metadata_store: MetadataStore
     vector_store: VectorStore
 

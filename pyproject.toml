@@ -22,11 +22,13 @@ classifiers = [
 ]
 dependencies = [
     "aiofiles>=25.1.0",
+    "azure-monitor-opentelemetry>=1.8.6",
     "google-genai[aiohttp]>=1.61.0",
     "markitdown[docx]>=0.1.4",
     "mcp[cli]>=1.26.0",
     "numpy>=2.4.1",
     "pydantic>=2.12.5",
+    "pymupdf-layout>=1.27.1",
     "pymupdf4llm>=0.2.9",
     "qdrant-client>=1.16.2",
     "semantic-text-splitter>=0.29.0",

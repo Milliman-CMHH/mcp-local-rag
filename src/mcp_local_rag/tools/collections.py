@@ -54,6 +54,7 @@ async def delete_collection(name: str, ctx: Ctx) -> None:
         raise CollectionNotFoundError(name)
 
     app.vector_store.delete_collection_chunks(name)
+    app.metadata_store.clear_page_cache_for_collection(name)
     app.metadata_store.delete_collection(name)
 
 

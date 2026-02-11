@@ -213,6 +213,9 @@ class VectorStore:
         )
         return CollectionStats(chunk_count=count_result.count)
 
+    def close(self) -> None:
+        self.client.close()
+
     def get_document_chunks(self, doc_id: str) -> list[DocumentChunk]:
         # Scroll through all points matching doc_id
         results, _ = self.client.scroll(

@@ -9,6 +9,8 @@ EMBEDDING_MODEL = os.environ.get(
     "MCP_LOCAL_RAG_EMBEDDING_MODEL", "BAAI/bge-small-en-v1.5"
 )
 MAX_CHUNKS_PER_DOC = int(os.environ.get("MCP_LOCAL_RAG_MAX_CHUNKS_PER_DOC", "10000"))
+MAX_CONCURRENT_FILES = int(os.environ.get("MCP_LOCAL_RAG_MAX_CONCURRENT_FILES", "16"))
+MAX_CONCURRENT_GEMINI = int(os.environ.get("MCP_LOCAL_RAG_MAX_CONCURRENT_GEMINI", "16"))
 
 QDRANT_PATH = DATA_DIR / "qdrant"
 SQLITE_PATH = DATA_DIR / "metadata.db"

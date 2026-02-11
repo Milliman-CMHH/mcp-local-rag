@@ -1,10 +1,13 @@
+from __future__ import annotations
+
 import asyncio
 import hashlib
+import logging
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from dataclasses import dataclass
 from pathlib import Path
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 import aiofiles
 from google import genai
@@ -15,10 +18,16 @@ from markitdown import MarkItDown
 from pydantic import BaseModel
 import pymupdf  # type: ignore[import-untyped]
 from pymupdf import Document  # pyright: ignore[reportMissingTypeStubs]
+import pymupdf.layout  # pyright: ignore[reportUnusedImport]
 import pymupdf4llm  # type: ignore[import-untyped]
 from pymupdf4llm.helpers.check_ocr import should_ocr_page  # pyright: ignore[reportMissingTypeStubs, reportUnknownVariableType]
 
 from mcp_local_rag.config import SUPPORTED_EXTENSIONS
+
+if TYPE_CHECKING:
+    from mcp_local_rag.storage.metadata import MetadataStore
+
+logger = logging.getLogger("mcp_local_rag.processing.extractors")
 
 
 @dataclass
@@ -136,56 +145,153 @@ async def _gemini_ocr_pdf_page_with_retry(
                 raise
 
             retry_after = _get_retry_after_seconds(err)
+            logger.warning(
+                "[%s] page %d: Gemini 429 rate-limited, Retry-After=%.1fs — sleeping (attempt %d/%d)",
+                file_path.name,
+                page_index + 1,
+                retry_after,
+                attempt + 1,
+                max_retries,
+            )
             await asyncio.sleep(retry_after)
 
     raise RuntimeError("Gemini OCR retries exhausted.")
 
 
+async def _convert_and_cache_gemini_page(
+    file_path: Path,
+    page_index: int,
+    file_hash: str,
+    gemini_client: genai.Client,
+    semaphore: asyncio.Semaphore,
+    metadata_store: MetadataStore,
+) -> str:
+    """Run Gemini OCR for a single page and cache the result on success."""
+    result = await _gemini_ocr_pdf_page_with_retry(
+        file_path=file_path,
+        page_index=page_index,
+        gemini_client=gemini_client,
+        semaphore=semaphore,
+    )
+    metadata_store.cache_page(file_hash, page_index, result)
+    return result
+
+
 async def extract_pdf(
     file_path: Path,
+    metadata_store: MetadataStore,
     gemini_client: genai.Client | None = None,
+    gemini_semaphore: asyncio.Semaphore | None = None,
+    force: bool = False,
 ) -> ExtractedDocument:
     file_hash = compute_file_hash(file_path)
 
+    if force:
+        metadata_store.clear_page_cache(file_hash)
+
     doc = pymupdf.open(str(file_path))
     page_count: int = len(doc)
+    semaphore = gemini_semaphore or asyncio.Semaphore(16)
+
+    logger.info("[%s] Extracting PDF (%d pages)", file_path.name, page_count)
+
+    gemini_page_count = 0
+    pymupdf_page_count = 0
+    cached_page_count = 0
     md_pages: list[str | asyncio.Task[str]] = []
-    semaphore = asyncio.Semaphore(16)
 
     for page_index, page in enumerate(doc.pages()):  # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType, reportUnknownVariableType]
-        if gemini_client is not None and should_ocr_page(page):  # pyright: ignore[reportUnknownArgumentType]
-            md_page = asyncio.create_task(
-                _gemini_ocr_pdf_page_with_retry(
+        cached = metadata_store.get_cached_page(file_hash, page_index)
+        if cached is not None:
+            logger.info(
+                "[%s]   [%d/%d] cached",
+                file_path.name,
+                page_index + 1,
+                page_count,
+            )
+            md_pages.append(cached)
+            cached_page_count += 1
+            continue
+
+        if gemini_client is not None and should_ocr_page(page)["should_ocr"]:  # pyright: ignore[reportUnknownArgumentType]
+            logger.info(
+                "[%s]   [%d/%d] Gemini OCR",
+                file_path.name,
+                page_index + 1,
+                page_count,
+            )
+            task = asyncio.create_task(
+                _convert_and_cache_gemini_page(
                     file_path=file_path,
                     page_index=page_index,
+                    file_hash=file_hash,
                     gemini_client=gemini_client,
                     semaphore=semaphore,
+                    metadata_store=metadata_store,
                 )
             )
+            md_pages.append(task)  # pyright: ignore[reportArgumentType]
+            gemini_page_count += 1
         else:
-            md_page = pymupdf4llm.to_markdown(  # type: ignore[assignment]
+            logger.info(
+                "[%s]   [%d/%d] pymupdf",
+                file_path.name,
+                page_index + 1,
+                page_count,
+            )
+            page_md: str = pymupdf4llm.to_markdown(  # type: ignore[assignment]
                 doc=str(file_path),
+                pages=[page_index],
                 use_ocr=False,
             )
-        md_pages.append(md_page)  # pyright: ignore[reportArgumentType]
+            metadata_store.cache_page(file_hash, page_index, page_md)
+            md_pages.append(page_md)
+            pymupdf_page_count += 1
 
     doc.close()
 
     tasks = [item for item in md_pages if isinstance(item, asyncio.Task)]
     md_text: list[str] = []
     if tasks:
-        task_results = await asyncio.gather(*tasks)
+        task_results = await asyncio.gather(*tasks, return_exceptions=True)
         task_iter = iter(task_results)
-        for item in md_pages:
+        failed_pages: list[int] = []
+        for page_idx, item in enumerate(md_pages):
             if isinstance(item, asyncio.Task):
-                md_text.append(next(task_iter))
+                result = next(task_iter)
+                if isinstance(result, BaseException):
+                    failed_pages.append(page_idx + 1)
+                    md_text.append("")
+                else:
+                    md_text.append(result)
             else:
                 md_text.append(item)
+        if failed_pages:
+            page_list = ", ".join(str(p) for p in failed_pages)
+            logger.error(
+                "[%s] Gemini OCR failed for %d page(s): %s",
+                file_path.name,
+                len(failed_pages),
+                page_list,
+            )
+            raise RuntimeError(
+                f"Gemini OCR failed for {len(failed_pages)} page(s) of "
+                f"{file_path.name}: pages {page_list}"
+            )
     else:
         for item in md_pages:
             if isinstance(item, asyncio.Task):
                 raise RuntimeError("Unexpected task while building markdown output.")
             md_text.append(item)
+
+    logger.info(
+        "[%s] Extraction complete: %d pages (%d cached, %d Gemini OCR, %d pymupdf)",
+        file_path.name,
+        page_count,
+        cached_page_count,
+        gemini_page_count,
+        pymupdf_page_count,
+    )
 
     return ExtractedDocument(
         file_path=str(file_path.resolve()),
@@ -197,6 +303,7 @@ async def extract_pdf(
 
 
 async def extract_docx(file_path: Path) -> ExtractedDocument:
+    logger.info("[%s] Extracting DOCX (markitdown)", file_path.name)
     file_hash = compute_file_hash(file_path)
     converter = MarkItDown()
     result = converter.convert(source=file_path)
@@ -210,6 +317,7 @@ async def extract_docx(file_path: Path) -> ExtractedDocument:
 
 
 async def extract_plaintext(file_path: Path) -> ExtractedDocument:
+    logger.info("[%s] Extracting plaintext", file_path.name)
     file_hash = compute_file_hash(file_path)
 
     async with aiofiles.open(file_path, "r", encoding="utf-8", errors="replace") as f:
@@ -225,7 +333,10 @@ async def extract_plaintext(file_path: Path) -> ExtractedDocument:
 
 async def extract_document(
     file_path: Path,
+    metadata_store: MetadataStore,
     gemini_client: genai.Client | None = None,
+    gemini_semaphore: asyncio.Semaphore | None = None,
+    force: bool = False,
 ) -> ExtractedDocument:
     suffix = file_path.suffix.lower()
 
@@ -236,7 +347,13 @@ async def extract_document(
 
     match file_type:
         case "pdf":
-            return await extract_pdf(file_path, gemini_client=gemini_client)
+            return await extract_pdf(
+                file_path,
+                metadata_store=metadata_store,
+                gemini_client=gemini_client,
+                gemini_semaphore=gemini_semaphore,
+                force=force,
+            )
         case "docx":
             return await extract_docx(file_path)
         case _:

@@ -32,6 +32,11 @@ class MetadataStore:
         ensure_data_dir()
         self.db_path = db_path or SQLITE_PATH
         self._init_db()
+        self._vacuum()
+
+    def _vacuum(self) -> None:
+        with self._get_connection() as conn:
+            conn.execute("VACUUM")
 
     def _init_db(self) -> None:
         with self._get_connection() as conn:
@@ -57,13 +62,29 @@ class MetadataStore:
                 CREATE INDEX IF NOT EXISTS idx_documents_collection ON documents(collection);
                 CREATE INDEX IF NOT EXISTS idx_documents_file_path ON documents(file_path);
                 CREATE INDEX IF NOT EXISTS idx_documents_file_hash ON documents(file_hash);
+
+                CREATE TABLE IF NOT EXISTS page_cache (
+                    file_hash TEXT NOT NULL,
+                    page_index INTEGER NOT NULL,
+                    content TEXT NOT NULL,
+                    cached_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (file_hash, page_index)
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_page_cache_file_hash ON page_cache(file_hash);
                 """
             )
 
     @contextmanager
     def _get_connection(self) -> Iterator[sqlite3.Connection]:
-        conn = sqlite3.connect(self.db_path, detect_types=sqlite3.PARSE_DECLTYPES)
+        conn = sqlite3.connect(
+            self.db_path,
+            detect_types=sqlite3.PARSE_DECLTYPES,
+            timeout=30.0,
+        )
         conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA journal_mode = WAL")
+        conn.execute("PRAGMA busy_timeout = 30000")
         conn.execute("PRAGMA foreign_keys = ON")
         try:
             yield conn
@@ -253,3 +274,43 @@ class MetadataStore:
                 "UPDATE documents SET file_mtime = ? WHERE doc_id = ?",
                 (file_mtime, doc_id),
             )
+
+    # ── Page cache ──────────────────────────────────────────────────────
+
+    def get_cached_page(self, file_hash: str, page_index: int) -> str | None:
+        """Load a cached page conversion result, or return None."""
+        with self._get_connection() as conn:
+            row = conn.execute(
+                "SELECT content FROM page_cache WHERE file_hash = ? AND page_index = ?",
+                (file_hash, page_index),
+            ).fetchone()
+            return row["content"] if row else None
+
+    def cache_page(self, file_hash: str, page_index: int, content: str) -> None:
+        """Store a page conversion result in the cache."""
+        with self._get_connection() as conn:
+            conn.execute(
+                "INSERT OR REPLACE INTO page_cache (file_hash, page_index, content) VALUES (?, ?, ?)",
+                (file_hash, page_index, content),
+            )
+
+    def clear_page_cache(self, file_hash: str) -> int:
+        """Remove all cached pages for a given file hash. Returns count deleted."""
+        with self._get_connection() as conn:
+            cursor = conn.execute(
+                "DELETE FROM page_cache WHERE file_hash = ?", (file_hash,)
+            )
+            return cursor.rowcount
+
+    def clear_page_cache_for_collection(self, collection: str) -> int:
+        """Remove cached pages for all documents in a collection."""
+        with self._get_connection() as conn:
+            cursor = conn.execute(
+                """
+                DELETE FROM page_cache WHERE file_hash IN (
+                    SELECT file_hash FROM documents WHERE collection = ?
+                )
+                """,
+                (collection,),
+            )
+            return cursor.rowcount
