@@ -22,7 +22,6 @@ classifiers = [
 ]
 dependencies = [
     "aiofiles>=25.1.0",
-    "azure-monitor-opentelemetry>=1.8.6",
     "google-genai[aiohttp]>=1.61.0",
     "markitdown[docx]>=0.1.4",
     "mcp[cli]>=1.26.0",
@@ -43,6 +42,11 @@ explicit = true
 
 [tool.uv.sources]
 torch = { index = "pytorch-cpu" }
+
+[project.optional-dependencies]
+telemetry = [
+    "azure-monitor-opentelemetry>=1.8.6",
+]
 
 [project.urls]
 Homepage = "https://github.com/Milliman-CMHH/mcp-local-rag"

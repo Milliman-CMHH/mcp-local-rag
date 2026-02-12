@@ -2,15 +2,15 @@
 
 Configures logging to stderr (visible in VS Code MCP server output) and
 optionally exports telemetry to Azure Monitor (Application Insights) when
-APPLICATIONINSIGHTS_CONNECTION_STRING is set. When not set, telemetry is a
-no-op so local dev works without overhead.
+APPLICATIONINSIGHTS_CONNECTION_STRING is set. Requires the ``telemetry``
+extra (``uv add mcp-local-rag[telemetry]``). When not set or when the
+extra is not installed, telemetry is a no-op so local use works without
+overhead.
 """
 
 import logging
 import os
 import sys
-
-from azure.monitor.opentelemetry import configure_azure_monitor  # pyright: ignore[reportMissingTypeStubs, reportUnknownVariableType]
 
 LOGGER_NAME = "mcp_local_rag"
 
@@ -29,6 +29,15 @@ def configure_telemetry() -> None:
     if not connection_string:
         logger.info(
             "APPLICATIONINSIGHTS_CONNECTION_STRING not set — telemetry disabled"
+        )
+        return
+
+    try:
+        from azure.monitor.opentelemetry import configure_azure_monitor  # pyright: ignore[reportUnknownVariableType]
+    except ImportError:
+        logger.warning(
+            "azure-monitor-opentelemetry is not installed — "
+            "install with: uv add mcp-local-rag[telemetry]"
         )
         return
 
