@@ -34,13 +34,23 @@ def register_tools(mcp: FastMCP[AppContext]) -> None:
         fn=index_files,
         description="Index one or more files into a collection. Supports PDF, DOCX, and plaintext files. "
         "Files are automatically chunked, embedded, and stored for semantic search. "
-        "Use force=True to re-index files even if unchanged.",
+        "Use force=True to re-index files even if unchanged. "
+        "extraction_method controls PDF conversion quality: "
+        "'auto' (default) uses fast local PyMuPDF for text-based pages and Gemini AI for scanned/OCR pages; "
+        "'gemini' uses Gemini AI for ALL pages (best quality — preserves tables and complex formatting, but slower and uses API quota); "
+        "'pymupdf' uses only local PyMuPDF (fastest, no API calls, but may lose table formatting or miss scanned content). "
+        "When unsure, ask the user whether they prefer speed or quality.",
     )
     mcp.add_tool(
         fn=index_directory,
         description="Index all supported files in a directory into a collection. "
         "Use glob_pattern to filter files (e.g., '*.pdf' for only PDFs). "
-        "Set recursive=True to include subdirectories.",
+        "Set recursive=True to include subdirectories. "
+        "extraction_method controls PDF conversion quality: "
+        "'auto' (default) uses fast local PyMuPDF for text-based pages and Gemini AI for scanned/OCR pages; "
+        "'gemini' uses Gemini AI for ALL pages (best quality — preserves tables and complex formatting, but slower and uses API quota); "
+        "'pymupdf' uses only local PyMuPDF (fastest, no API calls, but may lose table formatting or miss scanned content). "
+        "When unsure, ask the user whether they prefer speed or quality.",
     )
     mcp.add_tool(
         fn=remove_documents,

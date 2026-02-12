@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Literal, cast
 
 import aiofiles
 from google import genai
@@ -28,6 +28,8 @@ if TYPE_CHECKING:
     from mcp_local_rag.storage.metadata import MetadataStore
 
 logger = logging.getLogger("mcp_local_rag.processing.extractors")
+
+ExtractionMethod = Literal["auto", "gemini", "pymupdf"]
 
 
 @dataclass
@@ -183,6 +185,7 @@ async def extract_pdf(
     gemini_client: genai.Client | None = None,
     gemini_semaphore: asyncio.Semaphore | None = None,
     force: bool = False,
+    extraction_method: ExtractionMethod = "auto",
 ) -> ExtractedDocument:
     file_hash = compute_file_hash(file_path)
 
@@ -191,15 +194,43 @@ async def extract_pdf(
 
     doc = pymupdf.open(str(file_path))
     page_count: int = len(doc)
-    semaphore = gemini_semaphore or asyncio.Semaphore(16)
+    doc.close()
 
-    logger.info("[%s] Extracting PDF (%d pages)", file_path.name, page_count)
+    logger.info(
+        "[%s] Extracting PDF (%d pages, method=%s)",
+        file_path.name,
+        page_count,
+        extraction_method,
+    )
+
+    # Fast path: pymupdf-only needs no per-page iteration
+    if extraction_method == "pymupdf":
+        logger.info("[%s] Converting entire document with pymupdf", file_path.name)
+        content: str = pymupdf4llm.to_markdown(  # type: ignore[assignment]
+            doc=str(file_path),
+            use_ocr=False,
+        )
+        logger.info(
+            "[%s] Extraction complete: %d pages (all pymupdf)",
+            file_path.name,
+            page_count,
+        )
+        return ExtractedDocument(
+            file_path=str(file_path.resolve()),
+            file_hash=file_hash,
+            content=content,
+            file_type="pdf",
+            page_count=page_count,
+        )
+
+    semaphore = gemini_semaphore or asyncio.Semaphore(16)
 
     gemini_page_count = 0
     pymupdf_page_count = 0
     cached_page_count = 0
     md_pages: list[str | asyncio.Task[str]] = []
 
+    doc = pymupdf.open(str(file_path))
     for page_index, page in enumerate(doc.pages()):  # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType, reportUnknownVariableType]
         cached = metadata_store.get_cached_page(file_hash, page_index)
         if cached is not None:
@@ -213,7 +244,17 @@ async def extract_pdf(
             cached_page_count += 1
             continue
 
-        if gemini_client is not None and should_ocr_page(page)["should_ocr"]:  # pyright: ignore[reportUnknownArgumentType]
+        use_gemini = False
+        if extraction_method == "gemini":
+            use_gemini = gemini_client is not None
+        elif extraction_method == "auto":
+            use_gemini = (
+                gemini_client is not None and should_ocr_page(page)["should_ocr"]  # pyright: ignore[reportUnknownArgumentType]
+            )
+        # extraction_method == "pymupdf" → use_gemini stays False
+
+        if use_gemini:
+            assert gemini_client is not None
             logger.info(
                 "[%s]   [%d/%d] Gemini OCR",
                 file_path.name,
@@ -337,6 +378,7 @@ async def extract_document(
     gemini_client: genai.Client | None = None,
     gemini_semaphore: asyncio.Semaphore | None = None,
     force: bool = False,
+    extraction_method: ExtractionMethod = "auto",
 ) -> ExtractedDocument:
     suffix = file_path.suffix.lower()
 
@@ -353,6 +395,7 @@ async def extract_document(
                 gemini_client=gemini_client,
                 gemini_semaphore=gemini_semaphore,
                 force=force,
+                extraction_method=extraction_method,
             )
         case "docx":
             return await extract_docx(file_path)

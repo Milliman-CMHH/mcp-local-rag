@@ -9,6 +9,7 @@ from mcp_local_rag.processing.extractors import (
     compute_file_hash,
     extract_document,
     ExtractedDocument,
+    ExtractionMethod,
     get_file_mtime,
     is_supported_file,
 )
@@ -20,6 +21,7 @@ __all__ = [
     "embed_texts",
     "extract_document",
     "ExtractedDocument",
+    "ExtractionMethod",
     "get_embedding_dimension",
     "get_embedding_model",
     "get_file_mtime",

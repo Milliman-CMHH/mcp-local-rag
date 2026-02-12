@@ -12,6 +12,7 @@ from mcp_local_rag.processing import (
     compute_file_hash,
     embed_texts,
     extract_document,
+    ExtractionMethod,
     get_file_mtime,
     is_supported_file,
 )
@@ -62,6 +63,7 @@ async def _index_single_file(
     collection: str,
     force: bool,
     semaphore: asyncio.Semaphore,
+    extraction_method: ExtractionMethod = "auto",
 ) -> FileIndexResult:
     async with semaphore:
         if not file_path.exists():
@@ -106,6 +108,7 @@ async def _index_single_file(
                 gemini_client=app.gemini_client,
                 gemini_semaphore=app.gemini_semaphore,
                 force=force,
+                extraction_method=extraction_method,
             )
         except Exception as e:
             logger.error("[%s] Extraction failed: %s", file_path.name, e)
@@ -169,6 +172,7 @@ async def index_files(
     collection: str,
     ctx: Ctx,
     force: bool = False,
+    extraction_method: ExtractionMethod = "auto",
 ) -> list[FileIndexResult]:
     app = get_app(ctx)
 
@@ -181,7 +185,12 @@ async def index_files(
     paths = [Path(p).expanduser() for p in file_paths]
     results = list(
         await asyncio.gather(
-            *[_index_single_file(app, p, collection, force, semaphore) for p in paths]
+            *[
+                _index_single_file(
+                    app, p, collection, force, semaphore, extraction_method
+                )
+                for p in paths
+            ]
         )
     )
 
@@ -199,6 +208,7 @@ async def index_directory(
     glob_pattern: str = "*",
     recursive: bool = False,
     force: bool = False,
+    extraction_method: ExtractionMethod = "auto",
 ) -> list[FileIndexResult]:
     app = get_app(ctx)
 
@@ -234,7 +244,9 @@ async def index_directory(
     results = list(
         await asyncio.gather(
             *[
-                _index_single_file(app, p, collection, force, semaphore)
+                _index_single_file(
+                    app, p, collection, force, semaphore, extraction_method
+                )
                 for p in supported_files
             ]
         )
