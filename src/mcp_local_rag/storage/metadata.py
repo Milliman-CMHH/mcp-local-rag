@@ -76,6 +76,14 @@ class MetadataStore:
                 CREATE INDEX IF NOT EXISTS idx_page_cache_file_hash ON page_cache(file_hash);
                 """
             )
+            self._migrate(conn)
+
+    def _migrate(self, conn: sqlite3.Connection) -> None:
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(documents)")}
+        if "markdown_path" not in columns:
+            conn.execute(
+                "ALTER TABLE documents ADD COLUMN markdown_path TEXT NOT NULL DEFAULT ''"
+            )
 
     @contextmanager
     def _get_connection(self) -> Iterator[sqlite3.Connection]:
