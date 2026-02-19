@@ -25,6 +25,7 @@ MAX_CONCURRENT_GEMINI = int(
     os.environ.get("MCP_LOCAL_RAG_MAX_CONCURRENT_GEMINI", "128")
 )
 
+MARKDOWN_DIR = DATA_DIR / "markdown"
 QDRANT_PATH = DATA_DIR / "qdrant"
 SQLITE_PATH = DATA_DIR / "metadata.db"
 SUPPORTED_EXTENSIONS = {
@@ -40,4 +41,5 @@ SUPPORTED_EXTENSIONS = {
 
 def ensure_data_dir() -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
+    MARKDOWN_DIR.mkdir(parents=True, exist_ok=True)
     QDRANT_PATH.mkdir(parents=True, exist_ok=True)

@@ -24,6 +24,7 @@ class DocumentInfo:
     file_type: str
     collection: str
     chunk_count: int
+    markdown_path: str
     indexed_at: datetime
 
 
@@ -55,6 +56,7 @@ class MetadataStore:
                     file_type TEXT NOT NULL,
                     collection TEXT NOT NULL,
                     chunk_count INTEGER NOT NULL DEFAULT 0,
+                    markdown_path TEXT NOT NULL,
                     indexed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     FOREIGN KEY (collection) REFERENCES collections(name) ON DELETE CASCADE
                 );
@@ -167,13 +169,14 @@ class MetadataStore:
         file_type: str,
         collection: str,
         chunk_count: int,
+        markdown_path: str,
     ) -> None:
         with self._get_connection() as conn:
             conn.execute(
                 """
                 INSERT OR REPLACE INTO documents
-                (doc_id, file_path, file_hash, file_mtime, file_type, collection, chunk_count, indexed_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                (doc_id, file_path, file_hash, file_mtime, file_type, collection, chunk_count, markdown_path, indexed_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
                 """,
                 (
                     doc_id,
@@ -183,6 +186,7 @@ class MetadataStore:
                     file_type,
                     collection,
                     chunk_count,
+                    markdown_path,
                 ),
             )
 
@@ -208,6 +212,7 @@ class MetadataStore:
                 file_type=row["file_type"],
                 collection=row["collection"],
                 chunk_count=row["chunk_count"],
+                markdown_path=row["markdown_path"],
                 indexed_at=row["indexed_at"],
             )
 
@@ -231,6 +236,7 @@ class MetadataStore:
                 file_type=row["file_type"],
                 collection=row["collection"],
                 chunk_count=row["chunk_count"],
+                markdown_path=row["markdown_path"],
                 indexed_at=row["indexed_at"],
             )
 
@@ -255,6 +261,7 @@ class MetadataStore:
                     file_type=row["file_type"],
                     collection=row["collection"],
                     chunk_count=row["chunk_count"],
+                    markdown_path=row["markdown_path"],
                     indexed_at=row["indexed_at"],
                 )
                 for row in rows

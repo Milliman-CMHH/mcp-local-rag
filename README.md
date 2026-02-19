@@ -10,9 +10,9 @@ To process scanned PDFs, set the `GEMINI_API_KEY` environment variable for OCR s
 
 By default, the server stores data in:
 
-- **Windows**: `%LOCALAPPDATA%\mcp-local-rag\` (e.g., `C:\Users\YourName\AppData\Local\mcp-local-rag\`)
+- **Windows**: `%LOCALAPPDATA%\mcp-local-rag\`
 - **macOS**: `~/Library/Application Support/mcp-local-rag/`
-- **Linux**: `$XDG_DATA_HOME/mcp-local-rag/` (defaults to `~/.local/share/mcp-local-rag/`)
+- **Linux**: `$XDG_DATA_HOME/mcp-local-rag/`
 
 The data directory contains:
 

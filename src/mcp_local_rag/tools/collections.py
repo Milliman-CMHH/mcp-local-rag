@@ -1,4 +1,5 @@
 from datetime import datetime
+from pathlib import Path
 
 from pydantic import BaseModel
 
@@ -55,6 +56,10 @@ async def delete_collection(name: str, ctx: Ctx) -> None:
 
     app.vector_store.delete_collection_chunks(name)
     app.metadata_store.clear_page_cache_for_collection(name)
+
+    for doc in app.metadata_store.list_documents(name):
+        Path(doc.markdown_path).unlink(missing_ok=True)
+
     app.metadata_store.delete_collection(name)
 
 

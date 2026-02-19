@@ -49,11 +49,10 @@ async def get_document_content(
     if doc is None:
         raise DocumentNotFoundError(file_path, collection)
 
-    chunks = app.vector_store.get_document_chunks(doc.doc_id)
+    markdown_content = Path(doc.markdown_path).read_text(encoding="utf-8")
 
     output_file = Path(output_path).expanduser().resolve()
     output_file.parent.mkdir(parents=True, exist_ok=True)
-    markdown_content = "\n\n".join(chunk.text for chunk in chunks)
     output_file.write_text(
         markdown_content, encoding="utf-8", errors="backslashreplace"
     )
