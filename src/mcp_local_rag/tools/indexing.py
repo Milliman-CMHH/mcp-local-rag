@@ -5,7 +5,11 @@ from pathlib import Path
 
 from pydantic import BaseModel
 
-from mcp_local_rag.config import MAX_CONCURRENT_FILES, SUPPORTED_EXTENSIONS
+from mcp_local_rag.config import (
+    MARKDOWN_DIR,
+    MAX_CONCURRENT_FILES,
+    SUPPORTED_EXTENSIONS,
+)
 from mcp_local_rag.context import AppContext, Ctx, get_app
 from mcp_local_rag.processing import (
     chunk_text,
@@ -143,6 +147,11 @@ async def _index_single_file(
                 chunks, embeddings, doc_id, abs_path, collection
             )
 
+            markdown_file = MARKDOWN_DIR / f"{doc_id}.md"
+            markdown_file.write_text(
+                doc.content, encoding="utf-8", errors="backslashreplace"
+            )
+
             app.metadata_store.add_document(
                 doc_id=doc_id,
                 file_path=abs_path,
@@ -151,6 +160,7 @@ async def _index_single_file(
                 file_type=doc.file_type,
                 collection=collection,
                 chunk_count=len(chunks),
+                markdown_path=str(markdown_file),
             )
         except Exception as e:
             logger.error("[%s] Indexing failed: %s", file_path.name, e)
@@ -280,6 +290,7 @@ async def remove_documents(
         else:
             app.vector_store.delete_document_chunks(doc.doc_id)
             app.metadata_store.clear_page_cache(doc.file_hash)
+            Path(doc.markdown_path).unlink(missing_ok=True)
             app.metadata_store.remove_document(doc.doc_id)
             results.append(FileIndexResult(file_path=file_path, success=True))
 
