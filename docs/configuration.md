@@ -6,7 +6,7 @@ All configuration is via environment variables. Every setting has a sensible def
 
 - **`GEMINI_API_KEY`** — Google Gemini API key for OCR on scanned PDF pages. Without it, scanned pages are skipped (text-based PDFs still work fine).
 - **`APPLICATIONINSIGHTS_CONNECTION_STRING`** — Azure Application Insights connection string. When set, logs and traces are exported to Azure Monitor in addition to stderr. When unset, there is no overhead.
-- **`MCP_LOCAL_RAG_DATA_DIR`** — Base directory for server data (defaults to the current working directory). A `.mcp-local-rag/` subfolder is created inside it.
+- **`MCP_LOCAL_RAG_DATA_DIR`** — Base directory for server data (defaults to `%LOCALAPPDATA%` on Windows, `~/Library/Application Support` on macOS, or `$XDG_DATA_HOME` / `~/.local/share` on Linux). A `mcp-local-rag/` subfolder is created inside it.
 
 ## PDF extraction method
 

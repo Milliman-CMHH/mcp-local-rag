@@ -36,6 +36,13 @@
       ...
     }:
     flake-parts.lib.mkFlake { inherit inputs; } {
+      systems = [
+        "aarch64-darwin"
+        "aarch64-linux"
+        "x86_64-darwin"
+        "x86_64-linux"
+      ];
+
       perSystem =
         {
           pkgs,
@@ -44,11 +51,6 @@
           ...
         }:
         let
-          # Runtime dependencies that need to be available in PATH
-          runtimeDeps = with pkgs; [
-            tesseract
-          ];
-
           # Load the uv workspace from the current directory
           workspace = uv2nix.lib.workspace.loadWorkspace { workspaceRoot = ./.; };
 
@@ -82,7 +84,6 @@
             postBuild = ''
               # Wrap the main executable to include runtime deps in PATH
               wrapProgram $out/bin/mcp-local-rag \
-                --prefix PATH : ${lib.makeBinPath runtimeDeps} \
                 --prefix LD_LIBRARY_PATH : ${
                   lib.makeLibraryPath [
                     pkgs.stdenv.cc.cc.lib
@@ -141,7 +142,6 @@
           devShells.default = pkgs.mkShell {
             packages = with pkgs; [
               nodejs_24
-              tesseract
               uv
             ];
 
@@ -163,12 +163,5 @@
             buildInputs = pre-commit-check.enabledPackages;
           };
         };
-
-      systems = [
-        "aarch64-darwin"
-        "aarch64-linux"
-        "x86_64-darwin"
-        "x86_64-linux"
-      ];
     };
 }

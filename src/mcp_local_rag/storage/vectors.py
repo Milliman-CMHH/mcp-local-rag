@@ -16,7 +16,7 @@ from qdrant_client.models import (
     VectorParams,
 )
 
-from mcp_local_rag.config import MAX_CHUNKS_PER_DOC, QDRANT_PATH, ensure_data_dir
+from mcp_local_rag.config import QDRANT_PATH, ensure_data_dir
 from mcp_local_rag.processing.embeddings import get_embedding_dimension
 
 
@@ -217,21 +217,26 @@ class VectorStore:
         self.client.close()
 
     def get_document_chunks(self, doc_id: str) -> list[DocumentChunk]:
-        # Scroll through all points matching doc_id
-        results, _ = self.client.scroll(
-            collection_name=self.COLLECTION_NAME,
-            scroll_filter=Filter(
-                must=[FieldCondition(key="doc_id", match=MatchValue(value=doc_id))]
-            ),
-            limit=MAX_CHUNKS_PER_DOC,
-            with_payload=True,
+        doc_filter = Filter(
+            must=[FieldCondition(key="doc_id", match=MatchValue(value=doc_id))]
         )
-
-        chunks = [
-            DocumentChunk(
-                text=str(point.payload["text"]) if point.payload else "",
-                chunk_index=int(point.payload["chunk_index"]) if point.payload else 0,
+        chunks: list[DocumentChunk] = []
+        offset = None
+        while True:
+            results, next_offset = self.client.scroll(
+                collection_name=self.COLLECTION_NAME,
+                scroll_filter=doc_filter,
+                offset=offset,
+                with_payload=True,
             )
-            for point in results
-        ]
+            chunks.extend(
+                DocumentChunk(
+                    text=str(point.payload["text"]) if point.payload else "",
+                    chunk_index=int(point.payload["chunk_index"]) if point.payload else 0,
+                )
+                for point in results
+            )
+            if next_offset is None:
+                break
+            offset = next_offset
         return sorted(chunks, key=lambda c: c.chunk_index)

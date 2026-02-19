@@ -49,11 +49,11 @@ Each successfully converted page is cached in SQLite, keyed by file content hash
 
 ## Concurrency
 
-Files are indexed concurrently (configurable limit, default 16). Across all files, Gemini OCR requests share a separate global concurrency limit (also configurable, default 16) to avoid overwhelming the API.
+Files are indexed concurrently (configurable limit, default 32). Across all files, Gemini OCR requests share a separate global concurrency limit (also configurable, default 128) to avoid overwhelming the API.
 
 ## Storage
 
-The server uses two local stores under the `.mcp-local-rag/` directory:
+The server uses two local stores under the `mcp-local-rag/` directory:
 
 - **SQLite** — document and collection metadata, plus the temporary page cache for resumable PDF extraction. Uses WAL mode for concurrent access safety.
 - **Qdrant** — file-backed vector database storing all chunk embeddings. Chunks carry payload fields for filtering by collection and document.
