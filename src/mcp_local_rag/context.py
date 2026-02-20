@@ -1,5 +1,8 @@
+from __future__ import annotations
+
 import asyncio
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from google import genai
 
@@ -10,9 +13,13 @@ from mcp.types import CallToolRequest
 from mcp_local_rag.storage.metadata import MetadataStore
 from mcp_local_rag.storage.vectors import VectorStore
 
+if TYPE_CHECKING:
+    from azure.ai.documentintelligence.aio import DocumentIntelligenceClient
+
 
 @dataclass
 class AppContext:
+    azure_di_client: DocumentIntelligenceClient | None
     gemini_client: genai.Client | None
     gemini_semaphore: asyncio.Semaphore
     metadata_store: MetadataStore

@@ -109,6 +109,7 @@ async def _index_single_file(
             doc = await extract_document(
                 file_path,
                 metadata_store=app.metadata_store,
+                azure_di_client=app.azure_di_client,
                 gemini_client=app.gemini_client,
                 gemini_semaphore=app.gemini_semaphore,
                 force=force,

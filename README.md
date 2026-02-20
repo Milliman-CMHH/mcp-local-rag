@@ -4,7 +4,11 @@ Local MCP server for RAG over PDFs, DOCX, and plaintext files.
 
 ## Requirements
 
-To process scanned PDFs, set the `GEMINI_API_KEY` environment variable for OCR support. Text-based PDFs, DOCX, and plaintext files work without it.
+For more complex PDFs, the following environment variables can be provided:
+
+- `AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT`; requires `mcp-local-rag[azure]`.
+- `AZURE_DOCUMENT_INTELLIGENCE_KEY`; when omitted, `DefaultAzureCredential` is used. Requires `mcp-local-rag[azure]`.
+- `GEMINI_API_KEY`
 
 ## Data Storage
 
@@ -16,6 +20,7 @@ By default, the server stores data in:
 
 The data directory contains:
 
+- `markdown/` - Extracted Markdown content of indexed documents
 - `metadata.db` - SQLite database for document/collection metadata
 - `qdrant/` - Vector database for embeddings
 
