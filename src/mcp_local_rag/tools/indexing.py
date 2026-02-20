@@ -111,6 +111,7 @@ async def _index_single_file(
                 metadata_store=app.metadata_store,
                 gemini_client=app.gemini_client,
                 gemini_semaphore=app.gemini_semaphore,
+                azure_di_client=app.azure_di_client,
                 force=force,
                 extraction_method=extraction_method,
             )

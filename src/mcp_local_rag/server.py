@@ -7,7 +7,11 @@ from typing import AsyncIterator
 from google import genai
 from mcp.server.fastmcp import FastMCP
 
-from mcp_local_rag.config import MAX_CONCURRENT_GEMINI
+from mcp_local_rag.config import (
+    AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT,
+    AZURE_DOCUMENT_INTELLIGENCE_KEY,
+    MAX_CONCURRENT_GEMINI,
+)
 from mcp_local_rag.context import AppContext
 from mcp_local_rag.storage import MetadataStore, VectorStore
 from mcp_local_rag.telemetry import configure_telemetry
@@ -23,12 +27,37 @@ async def app_lifespan(server: FastMCP[AppContext]) -> AsyncIterator[AppContext]
     if api_key := os.environ.get("GEMINI_API_KEY"):
         gemini_client = genai.Client(api_key=api_key)
     else:
-        logger.warning("GEMINI_API_KEY not set — OCR functionality disabled")
+        logger.warning("GEMINI_API_KEY not set — Gemini OCR functionality disabled")
         gemini_client = None
+
+    azure_di_client = None
+    if AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT:
+        try:
+            from azure.ai.documentintelligence.aio import DocumentIntelligenceClient
+            from azure.core.credentials import AzureKeyCredential
+
+            if AZURE_DOCUMENT_INTELLIGENCE_KEY:
+                _credential = AzureKeyCredential(AZURE_DOCUMENT_INTELLIGENCE_KEY)
+            else:
+                from azure.identity.aio import DefaultAzureCredential
+
+                _credential = DefaultAzureCredential()
+
+            azure_di_client = DocumentIntelligenceClient(
+                AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT, _credential
+            )
+            logger.info("Azure Document Intelligence client initialized")
+        except ImportError:
+            logger.warning(
+                "AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT is set but "
+                "azure-ai-documentintelligence is not installed — "
+                "install with: uv add mcp-local-rag[azure]"
+            )
 
     app = AppContext(
         gemini_client=gemini_client,
         gemini_semaphore=asyncio.Semaphore(MAX_CONCURRENT_GEMINI),
+        azure_di_client=azure_di_client,
         metadata_store=MetadataStore(),
         vector_store=VectorStore(),
     )
@@ -36,6 +65,8 @@ async def app_lifespan(server: FastMCP[AppContext]) -> AsyncIterator[AppContext]
         yield app
     finally:
         app.vector_store.close()
+        if azure_di_client is not None:
+            await azure_di_client.close()
 
 
 mcp = FastMCP[AppContext]("local-rag", lifespan=app_lifespan)

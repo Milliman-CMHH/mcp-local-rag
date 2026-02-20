@@ -153,6 +153,20 @@ wheels = [
 ]
 
 [[package]]
+name = "azure-ai-documentintelligence"
+version = "1.0.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "azure-core" },
+    { name = "isodate" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/44/7b/8115cd713e2caa5e44def85f2b7ebd02a74ae74d7113ba20bdd41fd6dd80/azure_ai_documentintelligence-1.0.2.tar.gz", hash = "sha256:4d75a2513f2839365ebabc0e0e1772f5601b3a8c9a71e75da12440da13b63484", size = 170940, upload-time = "2025-03-27T02:46:20.606Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/d9/75/c9ec040f23082f54ffb1977ff8f364c2d21c79a640a13d1c1809e7fd6b1a/azure_ai_documentintelligence-1.0.2-py3-none-any.whl", hash = "sha256:e1fb446abbdeccc9759d897898a0fe13141ed29f9ad11fc705f951925822ed59", size = 106005, upload-time = "2025-03-27T02:46:22.356Z" },
+]
+
+[[package]]
 name = "azure-core"
 version = "1.38.1"
 source = { registry = "https://pypi.org/simple" }
@@ -1115,7 +1129,9 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
-telemetry = [
+azure = [
+    { name = "azure-ai-documentintelligence" },
+    { name = "azure-identity" },
     { name = "azure-monitor-opentelemetry" },
 ]
 
@@ -1128,7 +1144,9 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "aiofiles", specifier = ">=25.1.0" },
-    { name = "azure-monitor-opentelemetry", marker = "extra == 'telemetry'", specifier = ">=1.8.6" },
+    { name = "azure-ai-documentintelligence", marker = "extra == 'azure'", specifier = ">=1.0.2" },
+    { name = "azure-identity", marker = "extra == 'azure'", specifier = ">=1.25.2" },
+    { name = "azure-monitor-opentelemetry", marker = "extra == 'azure'", specifier = ">=1.8.6" },
     { name = "google-genai", extras = ["aiohttp"], specifier = ">=1.61.0" },
     { name = "markitdown", extras = ["docx"], specifier = ">=0.1.4" },
     { name = "mcp", extras = ["cli"], specifier = ">=1.26.0" },
@@ -1141,7 +1159,7 @@ requires-dist = [
     { name = "sentence-transformers", specifier = ">=5.2.2" },
     { name = "torch", specifier = ">=2.10.0", index = "https://download.pytorch.org/whl/cpu" },
 ]
-provides-extras = ["telemetry"]
+provides-extras = ["azure"]
 
 [package.metadata.requires-dev]
 dev = [

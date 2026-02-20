@@ -44,7 +44,9 @@ explicit = true
 torch = { index = "pytorch-cpu" }
 
 [project.optional-dependencies]
-telemetry = [
+azure = [
+    "azure-ai-documentintelligence>=1.0.2",
+    "azure-identity>=1.25.2",
     "azure-monitor-opentelemetry>=1.8.6",
 ]
 

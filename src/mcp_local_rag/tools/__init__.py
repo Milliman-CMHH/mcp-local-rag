@@ -36,10 +36,13 @@ def register_tools(mcp: FastMCP[AppContext]) -> None:
         "Files are automatically chunked, embedded, and stored for semantic search. "
         "Use force=True to re-index files even if unchanged. "
         "extraction_method controls PDF conversion quality: "
-        "'auto' (default) uses fast local PyMuPDF for text-based pages and Gemini AI for scanned/OCR pages; "
-        "'gemini' uses Gemini AI for ALL pages (best quality — preserves tables and complex formatting, but slower and uses API quota); "
-        "'pymupdf' uses only local PyMuPDF (fastest, no API calls, but may lose table formatting or miss scanned content). "
-        "When unsure, ask the user whether they prefer speed or quality.",
+        "'auto' (default) uses Azure Document Intelligence if configured (best quality, private), "
+        "otherwise Gemini AI for scanned/OCR pages and PyMuPDF for text-based pages; "
+        "'azure' explicitly uses Azure AI Document Intelligence for the whole document "
+        "(processes within your Azure tenant, handles scanned pages and complex tables, requires AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT); "
+        "'gemini' uses Gemini AI for ALL pages (high quality but uses shared API infrastructure); "
+        "'pymupdf' uses only local PyMuPDF (fastest, no API calls, but may miss scanned content or lose table formatting). "
+        "Prefer 'auto' unless the user has a specific reason to override.",
     )
     mcp.add_tool(
         fn=index_directory,
@@ -47,10 +50,13 @@ def register_tools(mcp: FastMCP[AppContext]) -> None:
         "Use glob_pattern to filter files (e.g., '*.pdf' for only PDFs). "
         "Set recursive=True to include subdirectories. "
         "extraction_method controls PDF conversion quality: "
-        "'auto' (default) uses fast local PyMuPDF for text-based pages and Gemini AI for scanned/OCR pages; "
-        "'gemini' uses Gemini AI for ALL pages (best quality — preserves tables and complex formatting, but slower and uses API quota); "
-        "'pymupdf' uses only local PyMuPDF (fastest, no API calls, but may lose table formatting or miss scanned content). "
-        "When unsure, ask the user whether they prefer speed or quality.",
+        "'auto' (default) uses Azure Document Intelligence if configured (best quality, private), "
+        "otherwise Gemini AI for scanned/OCR pages and PyMuPDF for text-based pages; "
+        "'azure' explicitly uses Azure AI Document Intelligence for the whole document "
+        "(processes within your Azure tenant, handles scanned pages and complex tables, requires AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT); "
+        "'gemini' uses Gemini AI for ALL pages (high quality but uses shared API infrastructure); "
+        "'pymupdf' uses only local PyMuPDF (fastest, no API calls, but may miss scanned content or lose table formatting). "
+        "Prefer 'auto' unless the user has a specific reason to override.",
     )
     mcp.add_tool(
         fn=remove_documents,

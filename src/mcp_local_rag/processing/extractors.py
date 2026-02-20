@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections import defaultdict
 import hashlib
 import logging
 from datetime import datetime, timezone
@@ -25,11 +26,18 @@ from pymupdf4llm.helpers.check_ocr import should_ocr_page  # pyright: ignore[rep
 from mcp_local_rag.config import SUPPORTED_EXTENSIONS
 
 if TYPE_CHECKING:
+    from azure.ai.documentintelligence.aio import DocumentIntelligenceClient
+    from azure.ai.documentintelligence.models import (
+        AnalyzeResult,
+        DocumentTable,
+        DocumentTableCell,
+    )
+
     from mcp_local_rag.storage.metadata import MetadataStore
 
 logger = logging.getLogger("mcp_local_rag.processing.extractors")
 
-ExtractionMethod = Literal["auto", "gemini", "pymupdf"]
+ExtractionMethod = Literal["auto", "azure", "gemini", "pymupdf"]
 
 
 @dataclass
@@ -179,11 +187,165 @@ async def _convert_and_cache_gemini_page(
     return result
 
 
+def _needs_html_table(table: DocumentTable) -> bool:
+    """Return True if any cell spans multiple rows or columns."""
+    for cell in table.cells:
+        if (cell.row_span or 1) > 1 or (cell.column_span or 1) > 1:
+            return True
+    return False
+
+
+def _build_html_table(table: DocumentTable) -> str:
+    """Render the table as an HTML table to support colspan/rowspan."""
+    # Track which (row, col) positions are already occupied by a spanning cell.
+    occupied: set[tuple[int, int]] = set()
+
+    rows_html: list[str] = []
+    header_rows: set[int] = set()
+    for cell in table.cells:
+        kind = cell.kind or "content"
+        if kind in ("columnHeader", "rowHeader", "stubHead"):
+            header_rows.add(cell.row_index)
+
+    # Group cells by row
+    by_row: dict[int, list[DocumentTableCell]] = defaultdict(list)
+    for cell in table.cells:
+        by_row[cell.row_index].append(cell)
+
+    for r_idx in range(table.row_count):
+        cells_in_row = sorted(by_row.get(r_idx, []), key=lambda c: c.column_index)
+        row_parts: list[str] = []
+        for cell in cells_in_row:
+            pos = (cell.row_index, cell.column_index)
+            if pos in occupied:
+                continue
+            rs = cell.row_span or 1
+            cs = cell.column_span or 1
+            # Mark all spanned positions as occupied
+            for dr in range(rs):
+                for dc in range(cs):
+                    occupied.add((cell.row_index + dr, cell.column_index + dc))
+            tag = "th" if r_idx in header_rows else "td"
+            attrs = ""
+            if rs > 1:
+                attrs += f' rowspan="{rs}"'
+            if cs > 1:
+                attrs += f' colspan="{cs}"'
+            content = cell.content.replace("\n", " ").strip()
+            row_parts.append(f"<{tag}{attrs}>{content}</{tag}>")
+        rows_html.append("  <tr>" + "".join(row_parts) + "</tr>")
+
+    lines: list[str] = []
+    if table.caption:
+        lines.append(f"**{table.caption.content.strip()}**")
+        lines.append("")
+    lines.append("<table>")
+    lines.extend(rows_html)
+    lines.append("</table>")
+    if table.footnotes:
+        for fn in table.footnotes:
+            lines.append("")
+            lines.append(f"_{fn.content.strip()}_")
+    return "\n".join(lines)
+
+
+def _build_markdown_table(table: DocumentTable) -> str:
+    """Reconstruct a table from structured Azure DI cell data.
+
+    Uses HTML when the table contains spanning cells (colspan/rowspan), since
+    standard Markdown tables don't support them. Falls back to a plain
+    Markdown table otherwise.
+    """
+    if _needs_html_table(table):
+        return _build_html_table(table)
+
+    row_count: int = table.row_count
+    col_count: int = table.column_count
+
+    grid: list[list[str]] = [["" for _ in range(col_count)] for _ in range(row_count)]
+    header_rows: set[int] = set()
+
+    for cell in table.cells:
+        r, c = cell.row_index, cell.column_index
+        grid[r][c] = cell.content.replace("\n", " ").strip()
+        kind = cell.kind or "content"
+        if kind in ("columnHeader", "rowHeader", "stubHead"):
+            header_rows.add(r)
+
+    separator_after = max(header_rows) if header_rows else 0
+
+    lines: list[str] = []
+    if table.caption:
+        lines.append(f"**{table.caption.content.strip()}**")
+        lines.append("")
+    for r_idx, row in enumerate(grid):
+        lines.append("| " + " | ".join(row) + " |")
+        if r_idx == separator_after:
+            lines.append("| " + " | ".join(["---"] * col_count) + " |")
+    if table.footnotes:
+        for fn in table.footnotes:
+            lines.append("")
+            lines.append(f"_{fn.content.strip()}_")
+    return "\n".join(lines)
+
+
+def _rebuild_content_tables(result: AnalyzeResult) -> str:
+    """Replace each table block in ``result.content`` with a reconstructed
+    Markdown table built from the structured ``result.tables`` cell data.
+
+    Replacements are applied right-to-left so earlier span offsets remain
+    valid throughout the substitution loop.
+    """
+    content: str = result.content
+    if not result.tables:
+        return content
+
+    replacements: list[tuple[int, int, str]] = []
+    for table in result.tables:
+        if not table.spans:
+            continue
+        span = table.spans[0]
+        replacements.append(
+            (span.offset, span.offset + span.length, _build_markdown_table(table))
+        )
+
+    for start, end, md in sorted(replacements, key=lambda x: x[0], reverse=True):
+        content = content[:start] + md + content[end:]
+
+    return content
+
+
+async def _azure_extract_pdf(
+    file_path: Path,
+    azure_di_client: DocumentIntelligenceClient,
+) -> str:
+    from azure.ai.documentintelligence.models import (
+        AnalyzeDocumentRequest,
+        DocumentContentFormat,
+    )
+
+    async with aiofiles.open(file_path, "rb") as f:
+        pdf_bytes = await f.read()
+
+    poller = await azure_di_client.begin_analyze_document(
+        "prebuilt-layout",
+        body=AnalyzeDocumentRequest(
+            bytes_source=pdf_bytes,
+        ),
+        output_content_format=DocumentContentFormat.MARKDOWN,
+    )
+    await poller.wait()
+    result = await poller.result()
+
+    return _rebuild_content_tables(result)
+
+
 async def extract_pdf(
     file_path: Path,
     metadata_store: MetadataStore,
     gemini_client: genai.Client | None = None,
     gemini_semaphore: asyncio.Semaphore | None = None,
+    azure_di_client: DocumentIntelligenceClient | None = None,
     force: bool = False,
     extraction_method: ExtractionMethod = "auto",
 ) -> ExtractedDocument:
@@ -202,6 +364,31 @@ async def extract_pdf(
         page_count,
         extraction_method,
     )
+
+    # Fast path: Azure Document Intelligence processes the whole document at once.
+    # Also used by 'auto' when an Azure client is available (preferred over Gemini).
+    if extraction_method == "azure" or (
+        extraction_method == "auto" and azure_di_client is not None
+    ):
+        if azure_di_client is None:
+            raise RuntimeError(
+                "extraction_method='azure' requires AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT "
+                "to be configured and azure-ai-documentintelligence to be installed."
+            )
+        logger.info("[%s] Extracting with Azure Document Intelligence", file_path.name)
+        content: str = await _azure_extract_pdf(file_path, azure_di_client)
+        logger.info(
+            "[%s] Extraction complete: %d pages (Azure Document Intelligence)",
+            file_path.name,
+            page_count,
+        )
+        return ExtractedDocument(
+            file_path=str(file_path.resolve()),
+            file_hash=file_hash,
+            content=content,
+            file_type="pdf",
+            page_count=page_count,
+        )
 
     # Fast path: pymupdf-only needs no per-page iteration
     if extraction_method == "pymupdf":
@@ -377,6 +564,7 @@ async def extract_document(
     metadata_store: MetadataStore,
     gemini_client: genai.Client | None = None,
     gemini_semaphore: asyncio.Semaphore | None = None,
+    azure_di_client: DocumentIntelligenceClient | None = None,
     force: bool = False,
     extraction_method: ExtractionMethod = "auto",
 ) -> ExtractedDocument:
@@ -394,6 +582,7 @@ async def extract_document(
                 metadata_store=metadata_store,
                 gemini_client=gemini_client,
                 gemini_semaphore=gemini_semaphore,
+                azure_di_client=azure_di_client,
                 force=force,
                 extraction_method=extraction_method,
             )

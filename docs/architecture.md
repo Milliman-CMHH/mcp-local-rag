@@ -19,7 +19,7 @@ MCP Client (VS Code, etc.)
 └────────────────────────────────────┘
 ```
 
-The server starts up via an async lifespan that initializes shared resources (database connections, embedding model, Gemini client, concurrency semaphores) and tears them down on shutdown. All shared state lives in an `AppContext` dataclass passed through MCP tool calls.
+The server starts up via an async lifespan that initializes shared resources (database connections, embedding model, Gemini client, Azure Document Intelligence client, concurrency semaphores) and tears them down on shutdown. All shared state lives in an `AppContext` dataclass passed through MCP tool calls.
 
 ## Indexing pipeline
 
@@ -36,10 +36,13 @@ Files are skipped if their content hasn't changed since the last index (checked 
 
 ## PDF extraction
 
-PDF extraction works page-by-page. Each page is independently classified by pymupdf4llm's `should_ocr_page` heuristic, which considers things like how much of the page is covered by text vs. images vs. vector graphics, whether existing text characters are readable, and whether image-heavy pages look like photos or scanned documents.
+PDF extraction supports three backends, selected via the `extraction_method` parameter:
 
-- **Text-extractable pages** are converted locally with pymupdf4llm
-- **Scanned/unreadable pages** are sent to Google Gemini for OCR (requires `GEMINI_API_KEY`)
+- **Azure Document Intelligence** — processes the entire document in one API call; reconstructs tables from structured cell data (including colspan/rowspan via HTML when needed). Used by `auto` when `AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT` is configured, or explicitly via `extraction_method="azure"`.
+- **Gemini AI** — per-page OCR for scanned/unreadable pages (requires `GEMINI_API_KEY`). Used by `auto` as a fallback when Azure is not configured.
+- **PyMuPDF** — fast local conversion with no API calls; used by `auto` for text-extractable pages, or exclusively via `extraction_method="pymupdf"`.
+
+In `auto` mode, if Azure Document Intelligence is configured it handles the whole document. Otherwise, each page is independently classified by pymupdf4llm's `should_ocr_page` heuristic — text-extractable pages use PyMuPDF and scanned pages fall back to Gemini.
 
 Gemini OCR requests respect the `Retry-After` header on 429 responses and retry automatically.
 
