@@ -343,9 +343,9 @@ async def _azure_extract_pdf(
 async def extract_pdf(
     file_path: Path,
     metadata_store: MetadataStore,
+    azure_di_client: DocumentIntelligenceClient | None = None,
     gemini_client: genai.Client | None = None,
     gemini_semaphore: asyncio.Semaphore | None = None,
-    azure_di_client: DocumentIntelligenceClient | None = None,
     force: bool = False,
     extraction_method: ExtractionMethod = "auto",
 ) -> ExtractedDocument:
@@ -562,9 +562,9 @@ async def extract_plaintext(file_path: Path) -> ExtractedDocument:
 async def extract_document(
     file_path: Path,
     metadata_store: MetadataStore,
+    azure_di_client: DocumentIntelligenceClient | None = None,
     gemini_client: genai.Client | None = None,
     gemini_semaphore: asyncio.Semaphore | None = None,
-    azure_di_client: DocumentIntelligenceClient | None = None,
     force: bool = False,
     extraction_method: ExtractionMethod = "auto",
 ) -> ExtractedDocument:
@@ -580,9 +580,9 @@ async def extract_document(
             return await extract_pdf(
                 file_path,
                 metadata_store=metadata_store,
+                azure_di_client=azure_di_client,
                 gemini_client=gemini_client,
                 gemini_semaphore=gemini_semaphore,
-                azure_di_client=azure_di_client,
                 force=force,
                 extraction_method=extraction_method,
             )

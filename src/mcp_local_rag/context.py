@@ -19,9 +19,9 @@ if TYPE_CHECKING:
 
 @dataclass
 class AppContext:
+    azure_di_client: DocumentIntelligenceClient | None
     gemini_client: genai.Client | None
     gemini_semaphore: asyncio.Semaphore
-    azure_di_client: DocumentIntelligenceClient | None
     metadata_store: MetadataStore
     vector_store: VectorStore
 

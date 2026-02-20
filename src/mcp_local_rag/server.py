@@ -64,9 +64,9 @@ async def app_lifespan(server: FastMCP[AppContext]) -> AsyncIterator[AppContext]
             )
 
     app = AppContext(
+        azure_di_client=azure_di_client,
         gemini_client=gemini_client,
         gemini_semaphore=asyncio.Semaphore(MAX_CONCURRENT_GEMINI),
-        azure_di_client=azure_di_client,
         metadata_store=MetadataStore(),
         vector_store=VectorStore(),
     )
