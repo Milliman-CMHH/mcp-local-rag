@@ -40,7 +40,7 @@ class DirectoryNotFoundError(Exception):
         super().__init__(f"Directory not found: {path}")
 
 
-class NotADirectoryError(Exception):
+class PathNotADirectoryError(Exception):
     def __init__(self, path: str) -> None:
         self.path = path
         super().__init__(f"Not a directory: {path}")
@@ -94,7 +94,7 @@ async def _index_single_file(
                     logger.info("[%s] Skipped (unchanged)", file_path.name)
                     return FileIndexResult(file_path=str(file_path), success=True)
                 # mtime changed, verify with hash
-                current_hash = compute_file_hash(file_path)
+                current_hash = await asyncio.to_thread(compute_file_hash, file_path)
                 if current_hash == existing.file_hash:
                     # Content unchanged, just update mtime
                     app.metadata_store.update_document_mtime(
@@ -124,7 +124,7 @@ async def _index_single_file(
             )
 
         try:
-            chunks = chunk_text(doc.content)
+            chunks = await asyncio.to_thread(chunk_text, doc.content)
             if not chunks:
                 logger.warning("[%s] No content extracted", file_path.name)
                 return FileIndexResult(
@@ -142,7 +142,7 @@ async def _index_single_file(
             # Remove existing chunks (if previous indexing was interrupted and retried)
             app.vector_store.delete_document_chunks(doc_id)
 
-            embeddings = embed_texts(chunks)
+            embeddings = await asyncio.to_thread(embed_texts, chunks)
 
             app.vector_store.add_chunks(
                 chunks, embeddings, doc_id, abs_path, collection
@@ -229,7 +229,7 @@ async def index_directory(
         raise DirectoryNotFoundError(str(directory))
 
     if not directory.is_dir():
-        raise NotADirectoryError(str(directory))
+        raise PathNotADirectoryError(str(directory))
 
     if not app.metadata_store.collection_exists(collection):
         app.metadata_store.create_collection(collection)

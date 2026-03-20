@@ -21,12 +21,6 @@ from mcp_local_rag.processing.embeddings import get_embedding_dimension
 
 
 @dataclass
-class DocumentChunk:
-    text: str
-    chunk_index: int
-
-
-@dataclass
 class CollectionStats:
     chunk_count: int
 
@@ -215,28 +209,3 @@ class VectorStore:
 
     def close(self) -> None:
         self.client.close()
-
-    def get_document_chunks(self, doc_id: str) -> list[DocumentChunk]:
-        doc_filter = Filter(
-            must=[FieldCondition(key="doc_id", match=MatchValue(value=doc_id))]
-        )
-        chunks: list[DocumentChunk] = []
-        offset = None
-        while True:
-            results, next_offset = self.client.scroll(
-                collection_name=self.COLLECTION_NAME,
-                scroll_filter=doc_filter,
-                offset=offset,
-                with_payload=True,
-            )
-            chunks.extend(
-                DocumentChunk(
-                    text=str(point.payload["text"]) if point.payload else "",
-                    chunk_index=int(point.payload["chunk_index"]) if point.payload else 0,
-                )
-                for point in results
-            )
-            if next_offset is None:
-                break
-            offset = next_offset
-        return sorted(chunks, key=lambda c: c.chunk_index)

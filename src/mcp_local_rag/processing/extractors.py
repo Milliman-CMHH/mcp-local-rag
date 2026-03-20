@@ -16,14 +16,13 @@ from google.genai import errors
 from google.genai import types
 from google.genai.types import MediaResolution
 from markitdown import MarkItDown
-from pydantic import BaseModel
 import pymupdf  # type: ignore[import-untyped]
 from pymupdf import Document  # pyright: ignore[reportMissingTypeStubs]
 import pymupdf.layout  # pyright: ignore[reportUnusedImport]
 import pymupdf4llm  # type: ignore[import-untyped]
 from pymupdf4llm.helpers.check_ocr import should_ocr_page  # pyright: ignore[reportMissingTypeStubs, reportUnknownVariableType]
 
-from mcp_local_rag.config import SUPPORTED_EXTENSIONS
+from mcp_local_rag.config import GEMINI_MODEL, IMAGE_MIME_TYPES, SUPPORTED_EXTENSIONS
 
 if TYPE_CHECKING:
     from azure.ai.documentintelligence.aio import DocumentIntelligenceClient
@@ -49,10 +48,6 @@ class ExtractedDocument:
     page_count: int | None = None
 
 
-class GeminiMarkdownResponse(BaseModel):
-    markdown: str
-
-
 def compute_file_hash(file_path: Path) -> str:
     with open(file_path, "rb") as f:
         return hashlib.file_digest(f, "sha256").hexdigest()
@@ -60,6 +55,25 @@ def compute_file_hash(file_path: Path) -> str:
 
 def get_file_mtime(file_path: Path) -> float:
     return file_path.stat().st_mtime
+
+
+def _get_pdf_page_count(file_path: Path) -> int:
+    doc = pymupdf.open(str(file_path))
+    page_count: int = len(doc)
+    doc.close()
+    return page_count
+
+
+def _pymupdf_to_markdown(
+    file_path: Path,
+    pages: list[int] | None = None,
+) -> str:
+    content: str = pymupdf4llm.to_markdown(  # type: ignore[assignment]
+        doc=str(file_path),
+        pages=pages,
+        use_ocr=False,
+    )
+    return content
 
 
 def _convert_pdf_page_to_bytes(
@@ -84,13 +98,14 @@ async def _gemini_ocr_pdf_page(
     gemini_client: genai.Client,
     media_resolution: MediaResolution = MediaResolution.MEDIA_RESOLUTION_MEDIUM,
 ) -> str:
-    pdf_bytes = _convert_pdf_page_to_bytes(
+    pdf_bytes = await asyncio.to_thread(
+        _convert_pdf_page_to_bytes,
         file_path=file_path,
         page_index=page_index,
     )
 
     response = await gemini_client.aio.models.generate_content(  # pyright: ignore[reportUnknownMemberType]
-        model="gemini-3-pro-preview",
+        model=GEMINI_MODEL,
         contents=[
             types.Part.from_bytes(data=pdf_bytes, mime_type="application/pdf"),
             types.Part.from_text(
@@ -185,6 +200,64 @@ async def _convert_and_cache_gemini_page(
     )
     metadata_store.cache_page(file_hash, page_index, result)
     return result
+
+
+async def _gemini_extract_image(
+    file_path: Path,
+    gemini_client: genai.Client,
+    semaphore: asyncio.Semaphore,
+    max_retries: int = 2,
+) -> str:
+    """Extract text and describe visual content from an image using Gemini."""
+    mime_type = IMAGE_MIME_TYPES.get(file_path.suffix.lower())
+    if mime_type is None:
+        raise ValueError(f"Unsupported image format: {file_path.suffix}")
+
+    async with aiofiles.open(file_path, "rb") as f:
+        image_bytes = await f.read()
+
+    for attempt in range(max_retries + 1):
+        try:
+            async with semaphore:
+                response = await gemini_client.aio.models.generate_content(  # pyright: ignore[reportUnknownMemberType]
+                    model=GEMINI_MODEL,
+                    contents=[
+                        types.Part.from_bytes(data=image_bytes, mime_type=mime_type),
+                        types.Part.from_text(
+                            text=(
+                                "Analyze this image and convert its content to Markdown. "
+                                "If it contains text, extract all text preserving structure "
+                                "(headings, lists, tables). If it contains visual elements "
+                                "like diagrams, charts, photos, or illustrations, describe "
+                                "them in detail. Return only the Markdown content."
+                            )
+                        ),
+                    ],
+                    config=types.GenerateContentConfig(
+                        media_resolution=MediaResolution.MEDIA_RESOLUTION_HIGH,
+                    ),
+                )
+        except errors.ClientError as err:
+            if err.code != 429 or attempt >= max_retries:
+                raise
+
+            retry_after = _get_retry_after_seconds(err)
+            logger.warning(
+                "[%s] Gemini 429 rate-limited, Retry-After=%.1fs — sleeping (attempt %d/%d)",
+                file_path.name,
+                retry_after,
+                attempt + 1,
+                max_retries,
+            )
+            await asyncio.sleep(retry_after)
+            continue
+
+        response_text = response.text
+        if response_text is None:
+            raise RuntimeError("Gemini image extraction response contained no text.")
+        return response_text
+
+    raise RuntimeError("Gemini image extraction retries exhausted.")
 
 
 def _needs_html_table(table: DocumentTable) -> bool:
@@ -315,22 +388,26 @@ def _rebuild_content_tables(result: AnalyzeResult) -> str:
     return content
 
 
-async def _azure_extract_pdf(
+async def _azure_extract_document(
     file_path: Path,
     azure_di_client: DocumentIntelligenceClient,
 ) -> str:
+    """Extract content from a document using Azure Document Intelligence.
+
+    Works for PDFs and images (JPEG, PNG, BMP, TIFF).
+    """
     from azure.ai.documentintelligence.models import (
         AnalyzeDocumentRequest,
         DocumentContentFormat,
     )
 
     async with aiofiles.open(file_path, "rb") as f:
-        pdf_bytes = await f.read()
+        file_bytes = await f.read()
 
     poller = await azure_di_client.begin_analyze_document(
         "prebuilt-layout",
         body=AnalyzeDocumentRequest(
-            bytes_source=pdf_bytes,
+            bytes_source=file_bytes,
         ),
         output_content_format=DocumentContentFormat.MARKDOWN,
     )
@@ -349,14 +426,12 @@ async def extract_pdf(
     force: bool = False,
     extraction_method: ExtractionMethod = "auto",
 ) -> ExtractedDocument:
-    file_hash = compute_file_hash(file_path)
+    file_hash = await asyncio.to_thread(compute_file_hash, file_path)
 
     if force:
         metadata_store.clear_page_cache(file_hash)
 
-    doc = pymupdf.open(str(file_path))
-    page_count: int = len(doc)
-    doc.close()
+    page_count = await asyncio.to_thread(_get_pdf_page_count, file_path)
 
     logger.info(
         "[%s] Extracting PDF (%d pages, method=%s)",
@@ -376,7 +451,7 @@ async def extract_pdf(
                 "to be configured and azure-ai-documentintelligence to be installed."
             )
         logger.info("[%s] Extracting with Azure Document Intelligence", file_path.name)
-        content: str = await _azure_extract_pdf(file_path, azure_di_client)
+        content: str = await _azure_extract_document(file_path, azure_di_client)
         logger.info(
             "[%s] Extraction complete: %d pages (Azure Document Intelligence)",
             file_path.name,
@@ -393,10 +468,7 @@ async def extract_pdf(
     # Fast path: pymupdf-only needs no per-page iteration
     if extraction_method == "pymupdf":
         logger.info("[%s] Converting entire document with pymupdf", file_path.name)
-        content: str = pymupdf4llm.to_markdown(  # type: ignore[assignment]
-            doc=str(file_path),
-            use_ocr=False,
-        )
+        content: str = await asyncio.to_thread(_pymupdf_to_markdown, file_path)
         logger.info(
             "[%s] Extraction complete: %d pages (all pymupdf)",
             file_path.name,
@@ -467,10 +539,8 @@ async def extract_pdf(
                 page_index + 1,
                 page_count,
             )
-            page_md: str = pymupdf4llm.to_markdown(  # type: ignore[assignment]
-                doc=str(file_path),
-                pages=[page_index],
-                use_ocr=False,
+            page_md = await asyncio.to_thread(
+                _pymupdf_to_markdown, file_path, [page_index]
             )
             metadata_store.cache_page(file_hash, page_index, page_md)
             md_pages.append(page_md)
@@ -532,9 +602,9 @@ async def extract_pdf(
 
 async def extract_docx(file_path: Path) -> ExtractedDocument:
     logger.info("[%s] Extracting DOCX (markitdown)", file_path.name)
-    file_hash = compute_file_hash(file_path)
+    file_hash = await asyncio.to_thread(compute_file_hash, file_path)
     converter = MarkItDown()
-    result = converter.convert(source=file_path)
+    result = await asyncio.to_thread(converter.convert, source=file_path)
 
     return ExtractedDocument(
         file_path=str(file_path.resolve()),
@@ -546,7 +616,7 @@ async def extract_docx(file_path: Path) -> ExtractedDocument:
 
 async def extract_plaintext(file_path: Path) -> ExtractedDocument:
     logger.info("[%s] Extracting plaintext", file_path.name)
-    file_hash = compute_file_hash(file_path)
+    file_hash = await asyncio.to_thread(compute_file_hash, file_path)
 
     async with aiofiles.open(file_path, "r", encoding="utf-8", errors="replace") as f:
         content = await f.read()
@@ -556,6 +626,72 @@ async def extract_plaintext(file_path: Path) -> ExtractedDocument:
         file_hash=file_hash,
         content=content,
         file_type="plaintext",
+    )
+
+
+async def extract_image(
+    file_path: Path,
+    azure_di_client: DocumentIntelligenceClient | None = None,
+    gemini_client: genai.Client | None = None,
+    gemini_semaphore: asyncio.Semaphore | None = None,
+    extraction_method: ExtractionMethod = "auto",
+) -> ExtractedDocument:
+    file_hash = await asyncio.to_thread(compute_file_hash, file_path)
+
+    logger.info("[%s] Extracting image (method=%s)", file_path.name, extraction_method)
+
+    if extraction_method == "pymupdf":
+        raise RuntimeError(
+            "Image extraction requires Gemini or Azure Document Intelligence. "
+            "Use extraction_method='auto', 'azure', or 'gemini'."
+        )
+
+    # Azure DI path (preferred in auto mode when available)
+    if extraction_method == "azure" or (
+        extraction_method == "auto" and azure_di_client is not None
+    ):
+        if azure_di_client is None:
+            raise RuntimeError(
+                "extraction_method='azure' requires AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT "
+                "to be configured and azure-ai-documentintelligence to be installed."
+            )
+        logger.info("[%s] Extracting with Azure Document Intelligence", file_path.name)
+        content = await _azure_extract_document(file_path, azure_di_client)
+        logger.info(
+            "[%s] Image extraction complete (Azure Document Intelligence)",
+            file_path.name,
+        )
+        return ExtractedDocument(
+            file_path=str(file_path.resolve()),
+            file_hash=file_hash,
+            content=content,
+            file_type="image",
+            page_count=1,
+        )
+
+    # Gemini path
+    if extraction_method == "gemini" or (
+        extraction_method == "auto" and gemini_client is not None
+    ):
+        if gemini_client is None:
+            raise RuntimeError(
+                "extraction_method='gemini' requires GEMINI_API_KEY to be set."
+            )
+        semaphore = gemini_semaphore or asyncio.Semaphore(16)
+        logger.info("[%s] Extracting with Gemini", file_path.name)
+        content = await _gemini_extract_image(file_path, gemini_client, semaphore)
+        logger.info("[%s] Image extraction complete (Gemini)", file_path.name)
+        return ExtractedDocument(
+            file_path=str(file_path.resolve()),
+            file_hash=file_hash,
+            content=content,
+            file_type="image",
+            page_count=1,
+        )
+
+    raise RuntimeError(
+        "Image extraction requires either GEMINI_API_KEY or "
+        "AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT to be configured."
     )
 
 
@@ -584,6 +720,14 @@ async def extract_document(
                 gemini_client=gemini_client,
                 gemini_semaphore=gemini_semaphore,
                 force=force,
+                extraction_method=extraction_method,
+            )
+        case "image":
+            return await extract_image(
+                file_path,
+                azure_di_client=azure_di_client,
+                gemini_client=gemini_client,
+                gemini_semaphore=gemini_semaphore,
                 extraction_method=extraction_method,
             )
         case "docx":
