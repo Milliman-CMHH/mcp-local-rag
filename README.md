@@ -1,14 +1,17 @@
 # mcp-local-rag
 
-Local MCP server for RAG over PDFs, DOCX, and plaintext files.
+Local MCP server for RAG over PDFs, DOCX, images, and plaintext files.
 
 ## Requirements
 
-For more complex PDFs, the following environment variables can be provided:
+For more complex PDFs and image files, the following environment variables can be provided:
 
 - `AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT`; requires `mcp-local-rag[azure]`.
 - `AZURE_DOCUMENT_INTELLIGENCE_KEY`; when omitted, `DefaultAzureCredential` is used. Requires `mcp-local-rag[azure]`.
 - `GEMINI_API_KEY`
+- `MCP_LOCAL_RAG_GEMINI_MODEL` (default: `gemini-3-pro-preview`)
+
+Image files require either Gemini or Azure DI for extraction. See [docs/configuration.md](docs/configuration.md) for details.
 
 ## Data Storage
 

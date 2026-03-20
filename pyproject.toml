@@ -21,18 +21,18 @@ classifiers = [
     "Topic :: Text Processing :: Indexing",
 ]
 dependencies = [
-    "aiofiles>=25.1.0",
-    "google-genai[aiohttp]>=1.61.0",
-    "markitdown[docx]>=0.1.4",
-    "mcp[cli]>=1.26.0",
-    "numpy>=2.4.1",
-    "pydantic>=2.12.5",
-    "pymupdf-layout>=1.27.1",
-    "pymupdf4llm>=0.2.9",
-    "qdrant-client>=1.16.2",
-    "semantic-text-splitter>=0.29.0",
-    "sentence-transformers>=5.2.2",
-    "torch>=2.10.0",
+    "aiofiles>=25.1.0,<26",
+    "google-genai[aiohttp]>=1.67.0,<2",
+    "markitdown[docx]>=0.1.4,<1",
+    "mcp[cli]>=1.26.0,<2",
+    "numpy>=2.4.2,<3",
+    "pydantic>=2.12.5,<3",
+    "pymupdf-layout>=1.27.1,<2",
+    "pymupdf4llm>=0.2.9,<1",
+    "qdrant-client>=1.16.2,<2",
+    "semantic-text-splitter>=0.29.0,<1",
+    "sentence-transformers>=5.2.2,<6",
+    "torch>=2.10.0,<3",
 ]
 
 [[tool.uv.index]]
@@ -45,9 +45,9 @@ torch = { index = "pytorch-cpu" }
 
 [project.optional-dependencies]
 azure = [
-    "azure-ai-documentintelligence>=1.0.2",
-    "azure-identity>=1.25.2",
-    "azure-monitor-opentelemetry>=1.8.6",
+    "azure-ai-documentintelligence>=1.0.2,<2",
+    "azure-identity>=1.25.2,<2",
+    "azure-monitor-opentelemetry>=1.8.6,<2",
 ]
 
 [project.urls]
@@ -70,6 +70,7 @@ include = ["src/mcp_local_rag"]
 
 [dependency-groups]
 dev = [
+    "mcp-local-rag[azure]",
     "pip-licenses>=5.5.1",
     "pyright>=1.1.408",
 ]
