@@ -646,7 +646,27 @@ async def extract_image(
             "Use extraction_method='auto', 'azure', or 'gemini'."
         )
 
-    # Azure DI path (preferred in auto mode when available)
+    # Gemini path (preferred in auto mode for images — higher resolution support)
+    if extraction_method == "gemini" or (
+        extraction_method == "auto" and gemini_client is not None
+    ):
+        if gemini_client is None:
+            raise RuntimeError(
+                "extraction_method='gemini' requires GEMINI_API_KEY to be set."
+            )
+        semaphore = gemini_semaphore or asyncio.Semaphore(16)
+        logger.info("[%s] Extracting with Gemini", file_path.name)
+        content = await _gemini_extract_image(file_path, gemini_client, semaphore)
+        logger.info("[%s] Image extraction complete (Gemini)", file_path.name)
+        return ExtractedDocument(
+            file_path=str(file_path.resolve()),
+            file_hash=file_hash,
+            content=content,
+            file_type="image",
+            page_count=1,
+        )
+
+    # Azure DI fallback
     if extraction_method == "azure" or (
         extraction_method == "auto" and azure_di_client is not None
     ):
@@ -661,26 +681,6 @@ async def extract_image(
             "[%s] Image extraction complete (Azure Document Intelligence)",
             file_path.name,
         )
-        return ExtractedDocument(
-            file_path=str(file_path.resolve()),
-            file_hash=file_hash,
-            content=content,
-            file_type="image",
-            page_count=1,
-        )
-
-    # Gemini path
-    if extraction_method == "gemini" or (
-        extraction_method == "auto" and gemini_client is not None
-    ):
-        if gemini_client is None:
-            raise RuntimeError(
-                "extraction_method='gemini' requires GEMINI_API_KEY to be set."
-            )
-        semaphore = gemini_semaphore or asyncio.Semaphore(16)
-        logger.info("[%s] Extracting with Gemini", file_path.name)
-        content = await _gemini_extract_image(file_path, gemini_client, semaphore)
-        logger.info("[%s] Image extraction complete (Gemini)", file_path.name)
         return ExtractedDocument(
             file_path=str(file_path.resolve()),
             file_hash=file_hash,
