@@ -61,6 +61,7 @@ async def delete_collection(name: str, ctx: Ctx) -> None:
         Path(doc.markdown_path).unlink(missing_ok=True)
 
     app.metadata_store.delete_collection(name)
+    app.metadata_store.vacuum()
 
 
 async def list_collections(ctx: Ctx) -> list[str]:
