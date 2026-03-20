@@ -20,6 +20,7 @@ DATA_DIR = (
 EMBEDDING_MODEL = os.environ.get(
     "MCP_LOCAL_RAG_EMBEDDING_MODEL", "BAAI/bge-small-en-v1.5"
 )
+GEMINI_MODEL = os.environ.get("MCP_LOCAL_RAG_GEMINI_MODEL", "gemini-3-pro-preview")
 MAX_CONCURRENT_FILES = int(os.environ.get("MCP_LOCAL_RAG_MAX_CONCURRENT_FILES", "32"))
 MAX_CONCURRENT_GEMINI = int(
     os.environ.get("MCP_LOCAL_RAG_MAX_CONCURRENT_GEMINI", "128")
@@ -41,6 +42,25 @@ SUPPORTED_EXTENSIONS = {
     ".markdown": "plaintext",
     ".rst": "plaintext",
     ".text": "plaintext",
+    ".jpg": "image",
+    ".jpeg": "image",
+    ".png": "image",
+    ".gif": "image",
+    ".bmp": "image",
+    ".tiff": "image",
+    ".tif": "image",
+    ".webp": "image",
+}
+
+IMAGE_MIME_TYPES: dict[str, str] = {
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".png": "image/png",
+    ".gif": "image/gif",
+    ".bmp": "image/bmp",
+    ".tiff": "image/tiff",
+    ".tif": "image/tiff",
+    ".webp": "image/webp",
 }
 
 

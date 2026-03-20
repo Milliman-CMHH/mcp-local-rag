@@ -33,9 +33,9 @@ class MetadataStore:
         ensure_data_dir()
         self.db_path = db_path or SQLITE_PATH
         self._init_db()
-        self._vacuum()
 
-    def _vacuum(self) -> None:
+    def vacuum(self) -> None:
+        """Reclaim disk space. Call after large deletions, not on every startup."""
         with self._get_connection() as conn:
             conn.execute("VACUUM")
 
@@ -274,14 +274,6 @@ class MetadataStore:
                 )
                 for row in rows
             ]
-
-    def get_file_hash(self, file_path: str, collection: str) -> str | None:
-        with self._get_connection() as conn:
-            row = conn.execute(
-                "SELECT file_hash FROM documents WHERE file_path = ? AND collection = ?",
-                (file_path, collection),
-            ).fetchone()
-            return row["file_hash"] if row else None
 
     def update_document_mtime(self, doc_id: str, file_mtime: float) -> None:
         with self._get_connection() as conn:
