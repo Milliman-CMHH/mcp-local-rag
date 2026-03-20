@@ -25,7 +25,7 @@ The server starts up via an async lifespan that initializes shared resources (da
 
 When files are indexed, each goes through:
 
-1. **Extraction** — convert the source file to Markdown (see [PDF extraction](#pdf-extraction) below; DOCX uses markitdown; plaintext is read directly)
+1. **Extraction** — convert the source file to Markdown (see [PDF extraction](#pdf-extraction) and [Image extraction](#image-extraction) below; DOCX uses markitdown; plaintext is read directly)
 2. **Chunking** — split the Markdown into token-aware overlapping chunks
 3. **Embedding** — encode chunks into vectors via sentence-transformers
 4. **Storage** — write vectors to Qdrant and metadata to SQLite
@@ -45,6 +45,14 @@ PDF extraction supports three backends, selected via the `extraction_method` par
 In `auto` mode, if Azure Document Intelligence is configured it handles the whole document. Otherwise, each page is independently classified by pymupdf4llm's `should_ocr_page` heuristic — text-extractable pages use PyMuPDF and scanned pages fall back to Gemini.
 
 Gemini OCR requests respect the `Retry-After` header on 429 responses and retry automatically.
+
+## Image extraction
+
+Image files are converted to Markdown via Gemini Vision or Azure Document Intelligence — there is no local extraction fallback. In `auto` mode, Azure DI is used when configured, otherwise Gemini.
+
+Gemini uses high-resolution mode for images (vs. medium for PDFs) and prompts the model to extract text preserving structure and describe visual elements like diagrams and charts.
+
+Images are always treated as single-page documents with no per-page caching (unlike PDFs). File-level change detection (mtime + SHA-256) still applies.
 
 ### Page cache (resumability)
 

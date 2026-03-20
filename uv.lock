@@ -1137,32 +1137,34 @@ azure = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "mcp-local-rag", extra = ["azure"] },
     { name = "pip-licenses" },
     { name = "pyright" },
 ]
 
 [package.metadata]
 requires-dist = [
-    { name = "aiofiles", specifier = ">=25.1.0" },
-    { name = "azure-ai-documentintelligence", marker = "extra == 'azure'", specifier = ">=1.0.2" },
-    { name = "azure-identity", marker = "extra == 'azure'", specifier = ">=1.25.2" },
-    { name = "azure-monitor-opentelemetry", marker = "extra == 'azure'", specifier = ">=1.8.6" },
-    { name = "google-genai", extras = ["aiohttp"], specifier = ">=1.61.0" },
-    { name = "markitdown", extras = ["docx"], specifier = ">=0.1.4" },
-    { name = "mcp", extras = ["cli"], specifier = ">=1.26.0" },
-    { name = "numpy", specifier = ">=2.4.1" },
-    { name = "pydantic", specifier = ">=2.12.5" },
-    { name = "pymupdf-layout", specifier = ">=1.27.1" },
-    { name = "pymupdf4llm", specifier = ">=0.2.9" },
-    { name = "qdrant-client", specifier = ">=1.16.2" },
-    { name = "semantic-text-splitter", specifier = ">=0.29.0" },
-    { name = "sentence-transformers", specifier = ">=5.2.2" },
-    { name = "torch", specifier = ">=2.10.0", index = "https://download.pytorch.org/whl/cpu" },
+    { name = "aiofiles", specifier = ">=25.1.0,<26" },
+    { name = "azure-ai-documentintelligence", marker = "extra == 'azure'", specifier = ">=1.0.2,<2" },
+    { name = "azure-identity", marker = "extra == 'azure'", specifier = ">=1.25.2,<2" },
+    { name = "azure-monitor-opentelemetry", marker = "extra == 'azure'", specifier = ">=1.8.6,<2" },
+    { name = "google-genai", extras = ["aiohttp"], specifier = ">=1.67.0,<2" },
+    { name = "markitdown", extras = ["docx"], specifier = ">=0.1.4,<1" },
+    { name = "mcp", extras = ["cli"], specifier = ">=1.26.0,<2" },
+    { name = "numpy", specifier = ">=2.4.2,<3" },
+    { name = "pydantic", specifier = ">=2.12.5,<3" },
+    { name = "pymupdf-layout", specifier = ">=1.27.1,<2" },
+    { name = "pymupdf4llm", specifier = ">=0.2.9,<1" },
+    { name = "qdrant-client", specifier = ">=1.16.2,<2" },
+    { name = "semantic-text-splitter", specifier = ">=0.29.0,<1" },
+    { name = "sentence-transformers", specifier = ">=5.2.2,<6" },
+    { name = "torch", specifier = ">=2.10.0,<3", index = "https://download.pytorch.org/whl/cpu" },
 ]
 provides-extras = ["azure"]
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "mcp-local-rag", extras = ["azure"] },
     { name = "pip-licenses", specifier = ">=5.5.1" },
     { name = "pyright", specifier = ">=1.1.408" },
 ]

@@ -32,30 +32,34 @@ def register_tools(mcp: FastMCP[AppContext]) -> None:
     )
     mcp.add_tool(
         fn=index_files,
-        description="Index one or more files into a collection. Supports PDF, DOCX, and plaintext files. "
+        description="Index one or more files into a collection. "
+        "Supports PDF, DOCX, plaintext, and image files (JPG, PNG, GIF, BMP, TIFF, WebP). "
         "Files are automatically chunked, embedded, and stored for semantic search. "
         "Use force=True to re-index files even if unchanged. "
-        "extraction_method controls PDF conversion quality: "
+        "extraction_method controls conversion quality: "
         "'auto' (default) uses Azure Document Intelligence if configured (best quality, private), "
         "otherwise Gemini AI for scanned/OCR pages and PyMuPDF for text-based pages; "
         "'azure' explicitly uses Azure AI Document Intelligence for the whole document "
         "(processes within your Azure tenant, handles scanned pages and complex tables, requires AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT); "
         "'gemini' uses Gemini AI for ALL pages (high quality but uses shared API infrastructure); "
         "'pymupdf' uses only local PyMuPDF (fastest, no API calls, but may miss scanned content or lose table formatting). "
+        "Note: image files require Gemini or Azure DI — 'pymupdf' does not support images. "
         "Prefer 'auto' unless the user has a specific reason to override.",
     )
     mcp.add_tool(
         fn=index_directory,
         description="Index all supported files in a directory into a collection. "
-        "Use glob_pattern to filter files (e.g., '*.pdf' for only PDFs). "
+        "Supports PDF, DOCX, plaintext, and image files (JPG, PNG, GIF, BMP, TIFF, WebP). "
+        "Use glob_pattern to filter files (e.g., '*.pdf' for only PDFs, '*.png' for only PNGs). "
         "Set recursive=True to include subdirectories. "
-        "extraction_method controls PDF conversion quality: "
+        "extraction_method controls conversion quality: "
         "'auto' (default) uses Azure Document Intelligence if configured (best quality, private), "
         "otherwise Gemini AI for scanned/OCR pages and PyMuPDF for text-based pages; "
         "'azure' explicitly uses Azure AI Document Intelligence for the whole document "
         "(processes within your Azure tenant, handles scanned pages and complex tables, requires AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT); "
         "'gemini' uses Gemini AI for ALL pages (high quality but uses shared API infrastructure); "
         "'pymupdf' uses only local PyMuPDF (fastest, no API calls, but may miss scanned content or lose table formatting). "
+        "Note: image files require Gemini or Azure DI — 'pymupdf' does not support images. "
         "Prefer 'auto' unless the user has a specific reason to override.",
     )
     mcp.add_tool(
