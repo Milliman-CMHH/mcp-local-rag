@@ -148,7 +148,7 @@
             env = {
               UV_NO_MANAGED_PYTHON = 1;
               UV_PYTHON_DOWNLOADS = "never";
-              # Required for numpy/torch native libraries on NixOS
+              # Required for numpy/onnxruntime native libraries on NixOS
               LD_LIBRARY_PATH = lib.makeLibraryPath [
                 pkgs.stdenv.cc.cc.lib
                 pkgs.zlib
