@@ -22,6 +22,7 @@ classifiers = [
 ]
 dependencies = [
     "aiofiles>=25.1.0",
+    "fastembed>=0.6.0,<1",
     "google-genai[aiohttp]>=1.61.0",
     "markitdown[docx]>=0.1.4",
     "mcp[cli]>=1.26.0",
@@ -31,17 +32,7 @@ dependencies = [
     "pymupdf4llm>=0.2.9",
     "qdrant-client>=1.16.2",
     "semantic-text-splitter>=0.29.0",
-    "sentence-transformers>=5.2.2",
-    "torch>=2.10.0",
 ]
-
-[[tool.uv.index]]
-name = "pytorch-cpu"
-url = "https://download.pytorch.org/whl/cpu"
-explicit = true
-
-[tool.uv.sources]
-torch = { index = "pytorch-cpu" }
 
 [project.optional-dependencies]
 azure = [
