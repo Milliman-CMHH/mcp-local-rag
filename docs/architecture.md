@@ -48,7 +48,7 @@ Gemini OCR requests respect the `Retry-After` header on 429 responses and retry 
 
 ## Image extraction
 
-Image files are converted to Markdown via Gemini Vision or Azure Document Intelligence — there is no local extraction fallback. In `auto` mode, Azure DI is used when configured, otherwise Gemini.
+Image files are converted to Markdown via Gemini Vision or Azure Document Intelligence — there is no local extraction fallback. In `auto` mode, Gemini is preferred for images (higher resolution support); Azure DI is used as a fallback. See [configuration](configuration.md#image-files) for supported formats and details.
 
 Gemini uses high-resolution mode for images (vs. medium for PDFs) and prompts the model to extract text preserving structure and describe visual elements like diagrams and charts.
 

@@ -22,7 +22,12 @@ import pymupdf.layout  # pyright: ignore[reportUnusedImport]
 import pymupdf4llm  # type: ignore[import-untyped]
 from pymupdf4llm.helpers.check_ocr import should_ocr_page  # pyright: ignore[reportMissingTypeStubs, reportUnknownVariableType]
 
-from mcp_local_rag.config import GEMINI_MODEL, IMAGE_MIME_TYPES, SUPPORTED_EXTENSIONS
+from mcp_local_rag.config import (
+    AZURE_DI_SUPPORTED_IMAGE_EXTENSIONS,
+    GEMINI_MODEL,
+    IMAGE_MIME_TYPES,
+    SUPPORTED_EXTENSIONS,
+)
 
 if TYPE_CHECKING:
     from azure.ai.documentintelligence.aio import DocumentIntelligenceClient
@@ -674,6 +679,14 @@ async def extract_image(
             raise RuntimeError(
                 "extraction_method='azure' requires AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT "
                 "to be configured and azure-ai-documentintelligence to be installed."
+            )
+        suffix = file_path.suffix.lower()
+        if suffix not in AZURE_DI_SUPPORTED_IMAGE_EXTENSIONS:
+            supported = ", ".join(sorted(AZURE_DI_SUPPORTED_IMAGE_EXTENSIONS))
+            raise RuntimeError(
+                f"Azure Document Intelligence does not support '{suffix}' images. "
+                f"Supported image formats: {supported}. "
+                f"Use extraction_method='gemini' or set GEMINI_API_KEY for auto fallback."
             )
         logger.info("[%s] Extracting with Azure Document Intelligence", file_path.name)
         content = await _azure_extract_document(file_path, azure_di_client)

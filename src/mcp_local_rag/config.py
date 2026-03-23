@@ -52,6 +52,15 @@ SUPPORTED_EXTENSIONS = {
     ".webp": "image",
 }
 
+AZURE_DI_SUPPORTED_IMAGE_EXTENSIONS: set[str] = {
+    ".jpg",
+    ".jpeg",
+    ".png",
+    ".bmp",
+    ".tiff",
+    ".tif",
+}
+
 IMAGE_MIME_TYPES: dict[str, str] = {
     ".jpg": "image/jpeg",
     ".jpeg": "image/jpeg",

@@ -17,7 +17,7 @@ The `index_files` and `index_directory` tools accept an `extraction_method` para
 
 | Value | Behaviour | Best for |
 |---|---|---|
-| `auto` (default) | Uses Azure Document Intelligence if configured (best quality, private); otherwise Gemini AI for scanned/OCR pages and PyMuPDF for text-based pages | Most deployments — picks the best available backend automatically |
+| `auto` (default) | Uses Azure Document Intelligence if configured (best quality, private); otherwise Gemini AI for scanned/OCR pages and PyMuPDF for text-based pages. See [Image files](#image-files) for image-specific behaviour. | Most deployments — picks the best available backend automatically |
 | `azure` | Uses Azure AI Document Intelligence for the whole document | Complex tables, scanned content; processes within your Azure tenant. Requires `AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT` |
 | `gemini` | Sends **every** page through Gemini AI | High quality OCR when Azure DI is not available |
 | `pymupdf` | Uses only local PyMuPDF — no API calls (PDFs only, not supported for images) | Speed-sensitive workloads or when offline; may miss scanned content or lose table formatting |
@@ -26,7 +26,7 @@ Prefer `auto` unless there is a specific reason to override.
 
 ### Image files
 
-Image files require Gemini or Azure Document Intelligence for extraction — there is no local fallback. In `auto` mode, Azure DI is preferred when configured, otherwise Gemini is used. The `pymupdf` method does not support images and will return an error.
+Image files require Gemini or Azure Document Intelligence for extraction — there is no local fallback. In `auto` mode, Gemini is preferred when configured (higher resolution support); otherwise Azure DI is used as a fallback. Note that Azure DI only supports JPEG, PNG, BMP, and TIFF images — formats like GIF and WebP require Gemini. The `pymupdf` method does not support images and will return an error.
 
 ## Tuning
 
