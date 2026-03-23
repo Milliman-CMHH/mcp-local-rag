@@ -1,3 +1,5 @@
+import asyncio
+
 from pydantic import BaseModel
 
 from mcp_local_rag.context import Ctx, get_app
@@ -18,7 +20,7 @@ class SearchResults(BaseModel):
 
 async def search(query: str, top_k: int, ctx: Ctx) -> SearchResults:
     app = get_app(ctx)
-    query_embedding = embed_texts([query])[0]
+    query_embedding = (await asyncio.to_thread(embed_texts, [query]))[0]
     results = app.vector_store.search(query_embedding, top_k=top_k)
 
     return SearchResults(
@@ -42,7 +44,7 @@ async def search_collection(
     if not app.metadata_store.collection_exists(collection):
         raise CollectionNotFoundError(collection)
 
-    query_embedding = embed_texts([query])[0]
+    query_embedding = (await asyncio.to_thread(embed_texts, [query]))[0]
     results = app.vector_store.search(
         query_embedding, collection=collection, top_k=top_k
     )
