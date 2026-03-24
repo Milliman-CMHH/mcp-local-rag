@@ -11,6 +11,7 @@ result
 
 # Python-generated files
 __pycache__/
+src/mcp_local_rag/_version.py
 *.py[oc]
 build/
 dist/
