@@ -1,6 +1,6 @@
 [project]
 name = "mcp-local-rag"
-version = "0.2.0"
+dynamic = ["version"]
 description = "Local MCP server for RAG over PDFs, DOCX, and plaintext files."
 readme = "README.md"
 license = { text = "AGPL-3.0-or-later" }
@@ -59,8 +59,14 @@ Issues = "https://github.com/Milliman-CMHH/mcp-local-rag/issues"
 mcp-local-rag = "mcp_local_rag:main"
 
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling", "hatch-vcs"]
 build-backend = "hatchling.build"
+
+[tool.hatch.version]
+source = "vcs"
+
+[tool.hatch.build.hooks.vcs]
+version-file = "src/mcp_local_rag/_version.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/mcp_local_rag"]
