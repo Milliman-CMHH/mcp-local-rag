@@ -79,7 +79,12 @@ dev = [
     "mcp-local-rag[azure]",
     "pip-licenses>=5.5.1",
     "pyright>=1.1.408",
+    "pytest>=9.0,<10",
+    "pytest-asyncio>=1.0,<2",
 ]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
 
 [tool.pyright]
 typeCheckingMode = "strict"

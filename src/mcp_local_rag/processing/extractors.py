@@ -23,9 +23,11 @@ import pymupdf4llm  # type: ignore[import-untyped]
 from pymupdf4llm.helpers.check_ocr import should_ocr_page  # pyright: ignore[reportMissingTypeStubs, reportUnknownVariableType]
 
 from mcp_local_rag.config import (
-    AZURE_DI_SUPPORTED_IMAGE_EXTENSIONS,
+    AZURE_DI_SUPPORTED_EXTENSIONS,
     GEMINI_MODEL,
+    GEMINI_SUPPORTED_EXTENSIONS,
     IMAGE_MIME_TYPES,
+    PYMUPDF_SUPPORTED_EXTENSIONS,
     SUPPORTED_EXTENSIONS,
 )
 
@@ -51,6 +53,18 @@ class ExtractedDocument:
     content: str
     file_type: str
     page_count: int | None = None
+
+
+_PROVIDER_SUPPORTED_EXTENSIONS: dict[str, set[str]] = {
+    "azure": AZURE_DI_SUPPORTED_EXTENSIONS,
+    "gemini": GEMINI_SUPPORTED_EXTENSIONS,
+    "pymupdf": PYMUPDF_SUPPORTED_EXTENSIONS,
+}
+
+
+def provider_supports_file(provider: str, suffix: str) -> bool:
+    extensions = _PROVIDER_SUPPORTED_EXTENSIONS.get(provider)
+    return extensions is not None and suffix in extensions
 
 
 def compute_file_hash(file_path: Path) -> str:
@@ -487,6 +501,11 @@ async def extract_pdf(
             page_count=page_count,
         )
 
+    if extraction_method == "gemini" and gemini_client is None:
+        raise RuntimeError(
+            "extraction_method='gemini' requires GEMINI_API_KEY to be set."
+        )
+
     semaphore = gemini_semaphore or asyncio.Semaphore(16)
 
     gemini_page_count = 0
@@ -619,6 +638,53 @@ async def extract_docx(file_path: Path) -> ExtractedDocument:
     )
 
 
+async def extract_azure_di_document(
+    file_path: Path,
+    azure_di_client: DocumentIntelligenceClient | None = None,
+    extraction_method: ExtractionMethod = "auto",
+) -> ExtractedDocument:
+    suffix = file_path.suffix.lower()
+    file_type = SUPPORTED_EXTENSIONS[suffix]
+    file_hash = await asyncio.to_thread(compute_file_hash, file_path)
+
+    if extraction_method != "auto":
+        if not provider_supports_file(extraction_method, suffix):
+            raise RuntimeError(
+                f"{extraction_method} does not support '{suffix}' files."
+            )
+        if extraction_method == "azure" and azure_di_client is None:
+            raise RuntimeError(
+                "extraction_method='azure' requires "
+                "AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT to be configured "
+                "and azure-ai-documentintelligence to be installed."
+            )
+
+    if extraction_method == "auto":
+        if not (
+            provider_supports_file("azure", suffix) and azure_di_client is not None
+        ):
+            raise RuntimeError(
+                f"No extraction provider available for '{suffix}' files. "
+                "Azure Document Intelligence is required. "
+                "Set AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT and install "
+                "azure-ai-documentintelligence."
+            )
+
+    assert azure_di_client is not None
+    logger.info("[%s] Extracting with Azure Document Intelligence", file_path.name)
+    content = await _azure_extract_document(file_path, azure_di_client)
+    logger.info(
+        "[%s] Extraction complete (Azure Document Intelligence)", file_path.name
+    )
+
+    return ExtractedDocument(
+        file_path=str(file_path.resolve()),
+        file_hash=file_hash,
+        content=content,
+        file_type=file_type,
+    )
+
+
 async def extract_plaintext(file_path: Path) -> ExtractedDocument:
     logger.info("[%s] Extracting plaintext", file_path.name)
     file_hash = await asyncio.to_thread(compute_file_hash, file_path)
@@ -642,23 +708,47 @@ async def extract_image(
     extraction_method: ExtractionMethod = "auto",
 ) -> ExtractedDocument:
     file_hash = await asyncio.to_thread(compute_file_hash, file_path)
+    suffix = file_path.suffix.lower()
 
     logger.info("[%s] Extracting image (method=%s)", file_path.name, extraction_method)
 
-    if extraction_method == "pymupdf":
-        raise RuntimeError(
-            "Image extraction requires Gemini or Azure Document Intelligence. "
-            "Use extraction_method='auto', 'azure', or 'gemini'."
+    if extraction_method != "auto":
+        if not provider_supports_file(extraction_method, suffix):
+            raise RuntimeError(
+                f"{extraction_method} does not support '{suffix}' images."
+            )
+        match extraction_method:
+            case "gemini":
+                if gemini_client is None:
+                    raise RuntimeError(
+                        "extraction_method='gemini' requires GEMINI_API_KEY to be set."
+                    )
+                semaphore = gemini_semaphore or asyncio.Semaphore(16)
+                content = await _gemini_extract_image(
+                    file_path, gemini_client, semaphore
+                )
+            case "azure":
+                if azure_di_client is None:
+                    raise RuntimeError(
+                        "extraction_method='azure' requires "
+                        "AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT to be configured "
+                        "and azure-ai-documentintelligence to be installed."
+                    )
+                content = await _azure_extract_document(file_path, azure_di_client)
+            case _:
+                raise RuntimeError(
+                    f"{extraction_method} does not support image extraction."
+                )
+
+        return ExtractedDocument(
+            file_path=str(file_path.resolve()),
+            file_hash=file_hash,
+            content=content,
+            file_type="image",
+            page_count=1,
         )
 
-    # Gemini path (preferred in auto mode for images — higher resolution support)
-    if extraction_method == "gemini" or (
-        extraction_method == "auto" and gemini_client is not None
-    ):
-        if gemini_client is None:
-            raise RuntimeError(
-                "extraction_method='gemini' requires GEMINI_API_KEY to be set."
-            )
+    if provider_supports_file("gemini", suffix) and gemini_client is not None:
         semaphore = gemini_semaphore or asyncio.Semaphore(16)
         logger.info("[%s] Extracting with Gemini", file_path.name)
         content = await _gemini_extract_image(file_path, gemini_client, semaphore)
@@ -671,23 +761,7 @@ async def extract_image(
             page_count=1,
         )
 
-    # Azure DI fallback
-    if extraction_method == "azure" or (
-        extraction_method == "auto" and azure_di_client is not None
-    ):
-        if azure_di_client is None:
-            raise RuntimeError(
-                "extraction_method='azure' requires AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT "
-                "to be configured and azure-ai-documentintelligence to be installed."
-            )
-        suffix = file_path.suffix.lower()
-        if suffix not in AZURE_DI_SUPPORTED_IMAGE_EXTENSIONS:
-            supported = ", ".join(sorted(AZURE_DI_SUPPORTED_IMAGE_EXTENSIONS))
-            raise RuntimeError(
-                f"Azure Document Intelligence does not support '{suffix}' images. "
-                f"Supported image formats: {supported}. "
-                f"Use extraction_method='gemini' or set GEMINI_API_KEY for auto fallback."
-            )
+    if provider_supports_file("azure", suffix) and azure_di_client is not None:
         logger.info("[%s] Extracting with Azure Document Intelligence", file_path.name)
         content = await _azure_extract_document(file_path, azure_di_client)
         logger.info(
@@ -703,8 +777,8 @@ async def extract_image(
         )
 
     raise RuntimeError(
-        "Image extraction requires either GEMINI_API_KEY or "
-        "AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT to be configured."
+        f"No extraction provider available for '{suffix}' images. "
+        "Configure GEMINI_API_KEY or AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT."
     )
 
 
@@ -745,6 +819,12 @@ async def extract_document(
             )
         case "docx":
             return await extract_docx(file_path)
+        case "html" | "pptx" | "xlsx":
+            return await extract_azure_di_document(
+                file_path,
+                azure_di_client=azure_di_client,
+                extraction_method=extraction_method,
+            )
         case _:
             return await extract_plaintext(file_path)
 
