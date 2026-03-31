@@ -34,7 +34,6 @@ class TestProviderSupportsFile:
         "suffix,expected",
         [
             (".bmp", True),
-            (".gif", False),
             (".heic", False),
             (".heif", False),
             (".html", True),
@@ -57,7 +56,6 @@ class TestProviderSupportsFile:
         "suffix,expected",
         [
             (".bmp", False),
-            (".gif", False),
             (".heic", True),
             (".heif", True),
             (".html", False),
@@ -100,7 +98,6 @@ class TestIsSupportedFile:
         [
             ".bmp",
             ".docx",
-            ".gif",
             ".heic",
             ".heif",
             ".html",
@@ -127,7 +124,9 @@ class TestIsSupportedFile:
     def test_supported(self, suffix: str) -> None:
         assert is_supported_file(Path(f"test{suffix}")) is True
 
-    @pytest.mark.parametrize("suffix", [".mp4", ".avi", ".unknown", ".doc", ".csv"])
+    @pytest.mark.parametrize(
+        "suffix", [".gif", ".mp4", ".avi", ".unknown", ".doc", ".csv"]
+    )
     def test_unsupported(self, suffix: str) -> None:
         assert is_supported_file(Path(f"test{suffix}")) is False
 
@@ -142,7 +141,6 @@ class TestExtractDocumentDispatch:
     @pytest.mark.parametrize(
         "suffix,extractor_name",
         [
-            (".gif", "extract_image"),
             (".heic", "extract_image"),
             (".heif", "extract_image"),
             (".html", "extract_azure_di_document"),
@@ -272,14 +270,6 @@ class TestImageFallback:
         with pytest.raises(RuntimeError):
             await extract_image(
                 Path("/fake/photo.heic"),
-                azure_di_client=azure,
-                gemini_client=None,
-            )
-
-    async def test_auto_gif_without_gemini_raises(self, azure: MagicMock) -> None:
-        with pytest.raises(RuntimeError):
-            await extract_image(
-                Path("/fake/photo.gif"),
                 azure_di_client=azure,
                 gemini_client=None,
             )

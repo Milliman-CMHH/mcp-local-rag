@@ -33,7 +33,7 @@ def register_tools(mcp: FastMCP[AppContext]) -> None:
     mcp.add_tool(
         fn=index_files,
         description="Index one or more files into a collection. "
-        "Supports PDF, DOCX, plaintext, and image files (JPG, PNG, GIF, BMP, TIFF, WebP). "
+        "Supports PDF, DOCX, HTML, PPTX, XLSX, plaintext, and image files (JPG, PNG, BMP, TIFF, WebP, HEIC/HEIF). "
         "Files are automatically chunked, embedded, and stored for semantic search. "
         "Use force=True to re-index files even if unchanged. "
         "extraction_method controls conversion quality: "
@@ -49,7 +49,7 @@ def register_tools(mcp: FastMCP[AppContext]) -> None:
     mcp.add_tool(
         fn=index_directory,
         description="Index all supported files in a directory into a collection. "
-        "Supports PDF, DOCX, plaintext, and image files (JPG, PNG, GIF, BMP, TIFF, WebP). "
+        "Supports PDF, DOCX, HTML, PPTX, XLSX, plaintext, and image files (JPG, PNG, BMP, TIFF, WebP, HEIC/HEIF). "
         "Use glob_pattern to filter files (e.g., '*.pdf' for only PDFs, '*.png' for only PNGs). "
         "Set recursive=True to include subdirectories. "
         "extraction_method controls conversion quality: "

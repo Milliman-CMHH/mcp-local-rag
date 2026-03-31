@@ -1,7 +1,7 @@
 [project]
 name = "mcp-local-rag"
 dynamic = ["version"]
-description = "Local MCP server for RAG over PDFs, DOCX, and plaintext files."
+description = "Local MCP server for RAG over PDFs, DOCX, images, and plaintext files."
 readme = "README.md"
 license = { text = "AGPL-3.0-or-later" }
 requires-python = ">=3.11,<3.14"
