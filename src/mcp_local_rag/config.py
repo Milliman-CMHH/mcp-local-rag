@@ -37,7 +37,6 @@ SQLITE_PATH = DATA_DIR / "metadata.db"
 SUPPORTED_EXTENSIONS = {
     ".bmp": "image",
     ".docx": "docx",
-    ".gif": "image",
     ".heic": "image",
     ".heif": "image",
     ".html": "html",
@@ -98,7 +97,6 @@ PYMUPDF_SUPPORTED_EXTENSIONS: set[str] = {
 
 IMAGE_MIME_TYPES: dict[str, str] = {
     ".bmp": "image/bmp",
-    ".gif": "image/gif",
     ".heic": "image/heic",
     ".heif": "image/heif",
     ".jfi": "image/jpeg",

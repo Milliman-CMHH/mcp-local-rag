@@ -26,7 +26,7 @@ Prefer `auto` unless there is a specific reason to override.
 
 ### Image files
 
-Image files require Gemini or Azure Document Intelligence for extraction — there is no local fallback. In `auto` mode, Gemini is preferred when configured (higher resolution support); otherwise Azure DI is used as a fallback. Note that Azure DI only supports JPEG, PNG, BMP, and TIFF images — formats like GIF and WebP require Gemini. The `pymupdf` method does not support images and will return an error.
+Image files require Gemini or Azure Document Intelligence for extraction — there is no local fallback. In `auto` mode, Gemini is preferred when configured (higher resolution support); otherwise Azure DI is used as a fallback. Note that Azure DI only supports JPEG, PNG, BMP, and TIFF images — formats like WebP, HEIC, and HEIF require Gemini. The `pymupdf` method does not support images and will return an error.
 
 ## Tuning
 
