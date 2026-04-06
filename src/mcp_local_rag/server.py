@@ -13,6 +13,7 @@ from mcp_local_rag.config import (
     AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT,
     AZURE_DOCUMENT_INTELLIGENCE_KEY,
     MAX_CONCURRENT_GEMINI,
+    QDRANT_URL,
 )
 from mcp_local_rag.context import AppContext
 from mcp_local_rag.storage import MetadataStore, VectorStore
@@ -68,7 +69,7 @@ async def app_lifespan(server: FastMCP[AppContext]) -> AsyncIterator[AppContext]
         gemini_client=gemini_client,
         gemini_semaphore=asyncio.Semaphore(MAX_CONCURRENT_GEMINI),
         metadata_store=MetadataStore(),
-        vector_store=VectorStore(),
+        vector_store=VectorStore(url=QDRANT_URL),
     )
     try:
         yield app

@@ -8,8 +8,9 @@ Additional configuration is possible via environment variables:
 | `AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT` | Azure AI Document Intelligence endpoint URL. When set, `auto` extraction uses Azure DI for the entire document (best quality, processes within your Azure tenant). Requires `mcp-local-rag[azure]`. |
 | `AZURE_DOCUMENT_INTELLIGENCE_KEY` | API key for Azure Document Intelligence. When omitted, `DefaultAzureCredential` is used instead. |
 | `GEMINI_API_KEY` | Google Gemini API key. Used for OCR on scanned PDF pages and for image extraction. Falls back from Azure DI when not configured. Without it, scanned pages are skipped and image files cannot be indexed (text-based PDFs still work fine). |
-| `MCP_LOCAL_RAG_DATA_DIR` | Base directory for server data (defaults to `%LOCALAPPDATA%` on Windows, `~/Library/Application Support` on macOS, or `$XDG_DATA_HOME` on Linux). A `mcp-local-rag/` subfolder is created inside it. |
+| `MCP_LOCAL_RAG_DATA_DIR` | Base directory for server data (defaults to `%LOCALAPPDATA%` on Windows, `~/Library/Application Support` on macOS, or `$XDG_DATA_HOME` on Linux). A `mcp-local-rag/` subfolder is created inside it for the markdown cache and metadata database. In embedded mode, Qdrant vector storage is also kept here; in client mode (`MCP_LOCAL_RAG_QDRANT_URL`), vector storage location is determined by the Qdrant server. |
 | `MCP_LOCAL_RAG_GEMINI_MODEL` | Gemini model to use for OCR and image extraction (default: `gemini-3-pro-preview`). |
+| `MCP_LOCAL_RAG_QDRANT_URL` | Qdrant server URL (e.g. `http://127.0.0.1:6333`). When set, connects to an external Qdrant server instead of using embedded storage, enabling multiple concurrent mcp-local-rag processes. When unset, uses embedded mode (single-instance only). |
 
 ## Extraction method
 
@@ -37,3 +38,13 @@ Image files require Gemini or Azure Document Intelligence for extraction — the
 | `MCP_LOCAL_RAG_EMBEDDING_MODEL` | `BAAI/bge-small-en-v1.5` | Sentence-transformers embedding model. Downloaded automatically on first use; changing it requires re-indexing all documents. |
 | `MCP_LOCAL_RAG_MAX_CONCURRENT_FILES` | `32` | Maximum files indexed concurrently |
 | `MCP_LOCAL_RAG_MAX_CONCURRENT_GEMINI` | `128` | Maximum concurrent Gemini API requests across all files |
+
+## Multi-instance setup
+
+By default, mcp-local-rag uses Qdrant in embedded mode, which takes an exclusive file lock on the storage directory. This means only one mcp-local-rag process can run at a time. When multiple MCP clients (VS Code windows, Claude Desktop, Claude Code) each spawn their own mcp-local-rag process, the second process will fail.
+
+To support multiple concurrent instances, run a standalone Qdrant server and point mcp-local-rag at it:
+
+```
+MCP_LOCAL_RAG_QDRANT_URL=http://127.0.0.1:6333
+```

@@ -1,5 +1,7 @@
 from dataclasses import dataclass
+import logging
 from pathlib import Path
+from typing import Literal
 import uuid
 
 import numpy as np
@@ -18,6 +20,8 @@ from qdrant_client.models import (
 
 from mcp_local_rag.config import QDRANT_PATH, ensure_data_dir
 from mcp_local_rag.processing.embeddings import get_embedding_dimension
+
+logger = logging.getLogger("mcp_local_rag.storage.vectors")
 
 
 @dataclass
@@ -38,10 +42,35 @@ class SearchResult:
 class VectorStore:
     COLLECTION_NAME = "chunks"
 
-    def __init__(self, db_path: Path | None = None) -> None:
+    def __init__(self, db_path: Path | None = None, url: str | None = None) -> None:
         ensure_data_dir()
-        self.db_path = db_path or QDRANT_PATH
-        self.client = QdrantClient(path=str(self.db_path))
+        if url:
+            self._mode: Literal["embedded", "client"] = "client"
+            self.db_path: Path | None = None
+            try:
+                self.client = QdrantClient(url=url)
+            except Exception as exc:
+                raise ConnectionError(
+                    f"Cannot reach Qdrant server at {url}.\n\n"
+                    "Ensure Qdrant is running and accessible at the configured URL."
+                ) from exc
+            logger.info("Qdrant client mode: connected to %s", url)
+        else:
+            self._mode = "embedded"
+            self.db_path = db_path or QDRANT_PATH
+            try:
+                self.client = QdrantClient(path=str(self.db_path))
+            except RuntimeError as exc:
+                if "lock" in str(exc).lower():
+                    raise RuntimeError(
+                        "Qdrant storage is locked by another process.\n\n"
+                        "To support multiple mcp-local-rag instances, run a "
+                        "standalone Qdrant server\n"
+                        "and set MCP_LOCAL_RAG_QDRANT_URL="
+                        "http://127.0.0.1:6333"
+                    ) from exc
+                raise
+            logger.info("Qdrant embedded mode: %s", self.db_path)
         self._ensure_collection()
 
     def _ensure_collection(self) -> None:
