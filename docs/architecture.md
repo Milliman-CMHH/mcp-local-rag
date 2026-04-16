@@ -67,7 +67,9 @@ Files are indexed concurrently (configurable limit, default 32). Across all file
 The server uses two local stores under the `mcp-local-rag/` directory:
 
 - **SQLite** — document and collection metadata, plus the temporary page cache for resumable PDF extraction. Uses WAL mode for concurrent access safety.
-- **Qdrant** — file-backed vector database storing all chunk embeddings. Chunks carry payload fields for filtering by collection and document.
+- **Qdrant** — vector database storing all chunk embeddings. Chunks carry payload fields for filtering by collection and document. Supports two modes:
+  - **Embedded mode** (default) — file-backed storage under `mcp-local-rag/qdrant/`. Takes an exclusive file lock, so only one mcp-local-rag process can run at a time.
+  - **Client mode** — connects to an external Qdrant server via `MCP_LOCAL_RAG_QDRANT_URL` (e.g., `http://127.0.0.1:6333`). Multiple concurrent mcp-local-rag processes are supported. See [configuration — multi-instance setup](configuration.md#multi-instance-setup) for details.
 
 ## Logging & telemetry
 
