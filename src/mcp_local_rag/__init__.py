@@ -1,10 +1,14 @@
 from importlib.metadata import PackageNotFoundError, version
 
-from mcp_local_rag.server import main, mcp
-
 try:
     __version__ = version("mcp-local-rag")
 except PackageNotFoundError:
     __version__ = "0.0.0-dev"
 
-__all__ = ["main", "mcp"]
+
+def main() -> None:
+    # Deferred import: keeps package-level import cost near-zero.
+    # The entry point (mcp-local-rag = "mcp_local_rag:main") calls this directly.
+    from mcp_local_rag.server import main as _main  # noqa: PLC0415
+
+    _main()

@@ -45,7 +45,6 @@ logger = logging.getLogger("mcp_local_rag.processing.extractors")
 
 ExtractionMethod = Literal["auto", "azure", "gemini", "pymupdf"]
 
-
 @dataclass
 class ExtractedDocument:
     file_path: str
@@ -100,7 +99,7 @@ def _convert_pdf_page_to_bytes(
     page_index: int,
 ) -> bytes:
     doc = pymupdf.open(str(file_path))
-    single_page_doc: Document = pymupdf.open()
+    single_page_doc: pymupdf.Document = pymupdf.open()
     try:
         single_page_doc.insert_pdf(doc, from_page=page_index, to_page=page_index)  # pyright: ignore[reportUnknownMemberType]
         pdf_bytes = single_page_doc.tobytes()  # pyright: ignore[reportUnknownMemberType]
