@@ -27,9 +27,14 @@ logger = logging.getLogger(LOGGER_NAME)
 def configure_logging() -> None:
     """Set up stderr logging only — no network calls."""
     logger.setLevel(logging.INFO)
-    handler = logging.StreamHandler(sys.stderr)
-    handler.setFormatter(logging.Formatter("%(levelname)-8s %(message)s"))
-    logger.addHandler(handler)
+    # Guard against duplicate handlers if called more than once (e.g. in tests).
+    if not any(
+        isinstance(h, logging.StreamHandler) and h.stream is sys.stderr
+        for h in logger.handlers
+    ):
+        handler = logging.StreamHandler(sys.stderr)
+        handler.setFormatter(logging.Formatter("%(levelname)-8s %(message)s"))
+        logger.addHandler(handler)
 
 
 async def configure_azure_monitor_async() -> None:

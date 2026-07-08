@@ -17,7 +17,6 @@ from google.genai import types
 from google.genai.types import MediaResolution
 from markitdown import MarkItDown
 import pymupdf  # type: ignore[import-untyped]
-from pymupdf import Document  # pyright: ignore[reportMissingTypeStubs]
 import pymupdf.layout  # pyright: ignore[reportUnusedImport]
 import pymupdf4llm  # type: ignore[import-untyped]
 from pymupdf4llm.helpers.check_ocr import should_ocr_page  # pyright: ignore[reportMissingTypeStubs, reportUnknownVariableType]

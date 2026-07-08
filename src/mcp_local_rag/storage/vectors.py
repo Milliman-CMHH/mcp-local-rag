@@ -174,7 +174,9 @@ class VectorStore:
         return len(points)
 
     def delete_document_chunks(self, doc_id: str) -> int:
-        self._ensure_collection_once()
+        # If the collection hasn't been created yet there's nothing to delete.
+        if not self._collection_ready:
+            return 0
         m = _qdrant_models()
         # Count before deletion
         count_result = self.client.count(
@@ -195,7 +197,9 @@ class VectorStore:
         return count_before
 
     def delete_collection_chunks(self, collection: str) -> int:
-        self._ensure_collection_once()
+        # If the collection hasn't been created yet there's nothing to delete.
+        if not self._collection_ready:
+            return 0
         m = _qdrant_models()
         # Count before deletion
         count_result = self.client.count(
@@ -268,7 +272,9 @@ class VectorStore:
         ]
 
     def get_collection_stats(self, collection: str) -> CollectionStats:
-        self._ensure_collection_once()
+        # If the collection hasn't been created yet it has no chunks.
+        if not self._collection_ready:
+            return CollectionStats(chunk_count=0)
         m = _qdrant_models()
         count_result = self.client.count(
             collection_name=self.COLLECTION_NAME,

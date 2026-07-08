@@ -137,7 +137,7 @@ async def _background_init(app: AppContext) -> None:
     logger.info("Background init: starting DB stage")
     try:
         await _retry("DB init", lambda: _init_db_stage(app))
-    except BaseException as exc:
+    except Exception as exc:
         app._db_error = exc  # noqa: SLF001
         logger.error("DB init permanently failed — tools requiring DB will error")
     finally:
@@ -146,13 +146,18 @@ async def _background_init(app: AppContext) -> None:
         if app._db_error is not None:  # noqa: SLF001
             app._model_error = app._db_error  # noqa: SLF001
             app._model_ready.set()  # noqa: SLF001
+            # Still clean up the telemetry task before returning.
+            try:
+                await telemetry_task
+            except Exception:
+                logger.warning("Azure Monitor telemetry setup failed", exc_info=True)
             return
 
     # ── Stage 2 ──────────────────────────────────────────────────────────
     logger.info("Background init: starting model warmup stage")
     try:
         await _retry("Model warmup", _init_model_stage)
-    except BaseException as exc:
+    except Exception as exc:
         app._model_error = exc  # noqa: SLF001
         logger.error(
             "Embedding model load permanently failed — search/index tools will error"
