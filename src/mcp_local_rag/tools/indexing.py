@@ -222,16 +222,15 @@ async def index_directory(
     force: bool = False,
     extraction_method: ExtractionMethod = "auto",
 ) -> list[FileIndexResult]:
-    app = get_app(ctx)
-    await app.await_model_ready()
-
+    # Validate path before waiting on model init — cheap check, no app needed.
     directory = Path(directory_path).expanduser()
-
     if not directory.exists():
         raise DirectoryNotFoundError(str(directory))
-
     if not directory.is_dir():
         raise PathNotADirectoryError(str(directory))
+
+    app = get_app(ctx)
+    await app.await_model_ready()
 
     if not app.metadata_store.collection_exists(collection):
         app.metadata_store.create_collection(collection)

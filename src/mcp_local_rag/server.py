@@ -3,10 +3,12 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Callable, Coroutine
 from contextlib import asynccontextmanager
+import contextlib
 import logging
 import os
 from typing import TYPE_CHECKING, Any, AsyncIterator
 
+from google import genai
 from mcp.server.fastmcp import FastMCP
 
 from mcp_local_rag.config import (
@@ -29,7 +31,8 @@ logger = logging.getLogger("mcp_local_rag.server")
 
 # Retry policy for background init stages.
 _INIT_MAX_ATTEMPTS = 3
-_INIT_BACKOFF_BASE = 2.0  # seconds; doubled on each retry (2 → 4 → 8)
+_INIT_BACKOFF_BASE = 2.0  # seconds; doubled on each retry (2 → 4 → 8), though only
+                           # two sleeps ever happen: after attempt 1 (2s) and attempt 2 (4s)
 
 
 async def _retry(label: str, coro_fn: Callable[[], Coroutine[Any, Any, None]]) -> None:
@@ -72,7 +75,6 @@ async def _init_db_stage(app: AppContext) -> None:
     """Stage 1: initialise SQLite schema and API clients."""
     # Gemini client (cheap object creation)
     if api_key := os.environ.get("GEMINI_API_KEY"):
-        from google import genai  # noqa: PLC0415
         app.gemini_client = genai.Client(api_key=api_key)
     else:
         logger.warning("GEMINI_API_KEY not set — Gemini OCR functionality disabled")
@@ -95,7 +97,7 @@ async def _init_db_stage(app: AppContext) -> None:
             app.azure_di_client = DocumentIntelligenceClient(
                 AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT, _credential
             )
-            logger.info("Azure Document Intelligence client initialised")
+            logger.info("Azure Document Intelligence client initialized")
         except ImportError:
             logger.warning(
                 "AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT is set but "
@@ -195,8 +197,10 @@ async def app_lifespan(server: FastMCP[AppContext]) -> AsyncIterator[AppContext]
         yield app
     finally:
         # Wait for the background task before tearing down so we never close
-        # resources mid-init.
-        await asyncio.shield(init_task)
+        # resources mid-init. Suppress CancelledError so that a shutdown/reload
+        # (which cancels this coroutine) still runs the cleanup below.
+        with contextlib.suppress(asyncio.CancelledError):
+            await asyncio.shield(init_task)
         app.vector_store.close()
         if app.azure_di_client is not None:
             await app.azure_di_client.close()

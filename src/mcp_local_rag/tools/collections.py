@@ -38,11 +38,11 @@ class CollectionInfo(BaseModel):
 
 
 async def create_collection(name: str, ctx: Ctx) -> None:
-    app = get_app(ctx)
-    await app.await_db_ready()
-
     if not name.strip():
         raise InvalidCollectionNameError(name)
+
+    app = get_app(ctx)
+    await app.await_db_ready()
 
     created = app.metadata_store.create_collection(name)
     if not created:

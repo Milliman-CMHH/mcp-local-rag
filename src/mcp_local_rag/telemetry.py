@@ -15,6 +15,7 @@ Call order
    never delays the MCP server handshake.
 """
 
+import asyncio
 import logging
 import os
 import sys
@@ -43,8 +44,6 @@ async def configure_azure_monitor_async() -> None:
     No-op when APPLICATIONINSIGHTS_CONNECTION_STRING is not set or when the
     azure-monitor-opentelemetry package is not installed.
     """
-    import asyncio  # noqa: PLC0415
-
     connection_string = os.environ.get("APPLICATIONINSIGHTS_CONNECTION_STRING")
     if not connection_string:
         logger.info(
@@ -68,10 +67,3 @@ async def configure_azure_monitor_async() -> None:
         logger_name=LOGGER_NAME,
     )
     logger.info("Azure Monitor telemetry configured")
-
-
-# Keep the old name as a convenience shim for any callers that still use it.
-def configure_telemetry() -> None:
-    """Deprecated shim: sets up logging only. Azure Monitor must be configured
-    separately via ``configure_azure_monitor_async()``."""
-    configure_logging()
