@@ -35,16 +35,16 @@ class AppContext:
     _model_error: BaseException | None = field(default=None)
 
     async def await_db_ready(self) -> None:
-        """Wait until SQLite and API clients are initialised.
+        """Wait until SQLite and API clients are initialized.
 
         Used by tools that only touch the metadata store or vector store
         without needing the embedding model (collections, document listing, etc.).
-        Raises a clear error if initialisation failed and all retries were exhausted.
+        Raises a clear error if initialization failed and all retries were exhausted.
         """
         await self._db_ready.wait()
         if self._db_error is not None:
             raise RuntimeError(
-                "Server DB initialisation failed — see server logs for details"
+                "Server DB initialization failed — see server logs for details"
             ) from self._db_error
 
     async def await_model_ready(self) -> None:

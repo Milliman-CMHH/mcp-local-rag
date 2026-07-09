@@ -25,9 +25,8 @@ from mcp_local_rag.config import (
 )
 
 if TYPE_CHECKING:
-    import aiofiles as _aiofiles_t
     from google import genai
-    from google.genai import errors, types
+    from google.genai import errors
     from google.genai.types import MediaResolution
     from markitdown import MarkItDown
     from azure.ai.documentintelligence.aio import DocumentIntelligenceClient

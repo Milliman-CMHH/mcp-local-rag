@@ -71,7 +71,7 @@ async def _retry(label: str, coro_fn: Callable[[], Coroutine[Any, Any, None]]) -
 
 
 async def _init_db_stage(app: AppContext) -> None:
-    """Stage 1: initialise SQLite schema and API clients."""
+    """Stage 1: initialize SQLite schema and API clients."""
     # Gemini client (cheap object creation)
     if api_key := os.environ.get("GEMINI_API_KEY"):
         from google import genai  # noqa: PLC0415
