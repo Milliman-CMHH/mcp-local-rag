@@ -10,14 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, cast
 
-import aiofiles
-from google import genai
-from google.genai import errors
-from google.genai import types
-from google.genai.types import MediaResolution
-from markitdown import MarkItDown
 import pymupdf  # type: ignore[import-untyped]
-from pymupdf import Document  # pyright: ignore[reportMissingTypeStubs]
 import pymupdf.layout  # pyright: ignore[reportUnusedImport]
 import pymupdf4llm  # type: ignore[import-untyped]
 from pymupdf4llm.helpers.check_ocr import should_ocr_page  # pyright: ignore[reportMissingTypeStubs, reportUnknownVariableType]
@@ -32,6 +25,10 @@ from mcp_local_rag.config import (
 )
 
 if TYPE_CHECKING:
+    from google import genai
+    from google.genai import errors
+    from google.genai.types import MediaResolution
+    from markitdown import MarkItDown
     from azure.ai.documentintelligence.aio import DocumentIntelligenceClient
     from azure.ai.documentintelligence.models import (
         AnalyzeResult,
@@ -44,7 +41,6 @@ if TYPE_CHECKING:
 logger = logging.getLogger("mcp_local_rag.processing.extractors")
 
 ExtractionMethod = Literal["auto", "azure", "gemini", "pymupdf"]
-
 
 @dataclass
 class ExtractedDocument:
@@ -100,7 +96,7 @@ def _convert_pdf_page_to_bytes(
     page_index: int,
 ) -> bytes:
     doc = pymupdf.open(str(file_path))
-    single_page_doc: Document = pymupdf.open()
+    single_page_doc: pymupdf.Document = pymupdf.open()
     try:
         single_page_doc.insert_pdf(doc, from_page=page_index, to_page=page_index)  # pyright: ignore[reportUnknownMemberType]
         pdf_bytes = single_page_doc.tobytes()  # pyright: ignore[reportUnknownMemberType]
@@ -115,8 +111,15 @@ async def _gemini_ocr_pdf_page(
     file_path: Path,
     page_index: int,
     gemini_client: genai.Client,
-    media_resolution: MediaResolution = MediaResolution.MEDIA_RESOLUTION_MEDIUM,
+    media_resolution: MediaResolution | None = None,
 ) -> str:
+    import aiofiles  # noqa: PLC0415
+    from google.genai import types as _types  # noqa: PLC0415
+    from google.genai.types import MediaResolution as _MR  # noqa: PLC0415
+
+    if media_resolution is None:
+        media_resolution = _MR.MEDIA_RESOLUTION_MEDIUM
+
     pdf_bytes = await asyncio.to_thread(
         _convert_pdf_page_to_bytes,
         file_path=file_path,
@@ -126,8 +129,8 @@ async def _gemini_ocr_pdf_page(
     response = await gemini_client.aio.models.generate_content(  # pyright: ignore[reportUnknownMemberType]
         model=GEMINI_MODEL,
         contents=[
-            types.Part.from_bytes(data=pdf_bytes, mime_type="application/pdf"),
-            types.Part.from_text(
+            _types.Part.from_bytes(data=pdf_bytes, mime_type="application/pdf"),
+            _types.Part.from_text(
                 text=(
                     "Convert this PDF page to Markdown. "
                     "Preserve headings, lists, tables, and formatting. "
@@ -135,7 +138,7 @@ async def _gemini_ocr_pdf_page(
                 )
             ),
         ],
-        config=types.GenerateContentConfig(media_resolution=media_resolution),
+        config=_types.GenerateContentConfig(media_resolution=media_resolution),
     )
 
     response_text = response.text
@@ -176,6 +179,8 @@ async def _gemini_ocr_pdf_page_with_retry(
     semaphore: asyncio.Semaphore,
     max_retries: int = 2,
 ) -> str:
+    from google.genai import errors as _errors  # noqa: PLC0415
+
     for attempt in range(max_retries + 1):
         try:
             async with semaphore:
@@ -184,7 +189,7 @@ async def _gemini_ocr_pdf_page_with_retry(
                     page_index=page_index,
                     gemini_client=gemini_client,
                 )
-        except errors.ClientError as err:
+        except _errors.ClientError as err:
             if err.code != 429 or attempt >= max_retries:
                 raise
 
@@ -228,6 +233,10 @@ async def _gemini_extract_image(
     max_retries: int = 2,
 ) -> str:
     """Extract text and describe visual content from an image using Gemini."""
+    import aiofiles  # noqa: PLC0415
+    from google.genai import errors as _errors, types as _types  # noqa: PLC0415
+    from google.genai.types import MediaResolution as _MR  # noqa: PLC0415
+
     mime_type = IMAGE_MIME_TYPES.get(file_path.suffix.lower())
     if mime_type is None:
         raise ValueError(f"Unsupported image format: {file_path.suffix}")
@@ -241,8 +250,8 @@ async def _gemini_extract_image(
                 response = await gemini_client.aio.models.generate_content(  # pyright: ignore[reportUnknownMemberType]
                     model=GEMINI_MODEL,
                     contents=[
-                        types.Part.from_bytes(data=image_bytes, mime_type=mime_type),
-                        types.Part.from_text(
+                        _types.Part.from_bytes(data=image_bytes, mime_type=mime_type),
+                        _types.Part.from_text(
                             text=(
                                 "Analyze this image and convert its content to Markdown. "
                                 "If it contains text, extract all text preserving structure "
@@ -252,11 +261,11 @@ async def _gemini_extract_image(
                             )
                         ),
                     ],
-                    config=types.GenerateContentConfig(
-                        media_resolution=MediaResolution.MEDIA_RESOLUTION_HIGH,
+                    config=_types.GenerateContentConfig(
+                        media_resolution=_MR.MEDIA_RESOLUTION_HIGH,
                     ),
                 )
-        except errors.ClientError as err:
+        except _errors.ClientError as err:
             if err.code != 429 or attempt >= max_retries:
                 raise
 
@@ -415,7 +424,8 @@ async def _azure_extract_document(
 
     Works for PDFs and images (JPEG, PNG, BMP, TIFF).
     """
-    from azure.ai.documentintelligence.models import (
+    import aiofiles  # noqa: PLC0415
+    from azure.ai.documentintelligence.models import (  # noqa: PLC0415
         AnalyzeDocumentRequest,
         DocumentContentFormat,
     )
@@ -625,6 +635,8 @@ async def extract_pdf(
 
 
 async def extract_docx(file_path: Path) -> ExtractedDocument:
+    from markitdown import MarkItDown  # noqa: PLC0415
+
     logger.info("[%s] Extracting DOCX (markitdown)", file_path.name)
     file_hash = await asyncio.to_thread(compute_file_hash, file_path)
     converter = MarkItDown()
@@ -686,6 +698,8 @@ async def extract_azure_di_document(
 
 
 async def extract_plaintext(file_path: Path) -> ExtractedDocument:
+    import aiofiles  # noqa: PLC0415
+
     logger.info("[%s] Extracting plaintext", file_path.name)
     file_hash = await asyncio.to_thread(compute_file_hash, file_path)
 

@@ -34,6 +34,17 @@ class MetadataStore:
         self.db_path = db_path or SQLITE_PATH
         self._init_db()
 
+    @classmethod
+    def create_uninitialized(cls, db_path: Path | None = None) -> "MetadataStore":
+        """Create a MetadataStore without running _init_db.
+
+        Call _init_db() explicitly (e.g. via asyncio.to_thread) before first use.
+        """
+        instance = cls.__new__(cls)
+        ensure_data_dir()
+        instance.db_path = db_path or SQLITE_PATH
+        return instance
+
     def vacuum(self) -> None:
         """Reclaim disk space. Call after large deletions, not on every startup."""
         with self._get_connection() as conn:

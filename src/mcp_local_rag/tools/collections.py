@@ -38,10 +38,11 @@ class CollectionInfo(BaseModel):
 
 
 async def create_collection(name: str, ctx: Ctx) -> None:
-    app = get_app(ctx)
-
     if not name.strip():
         raise InvalidCollectionNameError(name)
+
+    app = get_app(ctx)
+    await app.await_db_ready()
 
     created = app.metadata_store.create_collection(name)
     if not created:
@@ -50,6 +51,7 @@ async def create_collection(name: str, ctx: Ctx) -> None:
 
 async def delete_collection(name: str, ctx: Ctx) -> None:
     app = get_app(ctx)
+    await app.await_vector_ready()
 
     if not app.metadata_store.collection_exists(name):
         raise CollectionNotFoundError(name)
@@ -66,12 +68,14 @@ async def delete_collection(name: str, ctx: Ctx) -> None:
 
 async def list_collections(ctx: Ctx) -> list[str]:
     app = get_app(ctx)
+    await app.await_db_ready()
     collections = app.metadata_store.list_collections()
     return [c.name for c in collections]
 
 
 async def get_collection_info(name: str, ctx: Ctx) -> CollectionInfo:
     app = get_app(ctx)
+    await app.await_vector_ready()
     coll = app.metadata_store.get_collection(name)
     if coll is None:
         raise CollectionNotFoundError(name)

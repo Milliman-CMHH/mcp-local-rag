@@ -1,15 +1,25 @@
+from __future__ import annotations
+
 from functools import lru_cache
+from typing import TYPE_CHECKING
 
 import numpy as np
 from numpy.typing import NDArray
-from sentence_transformers import SentenceTransformer
 
 from mcp_local_rag.config import EMBEDDING_MODEL
+
+if TYPE_CHECKING:
+    from sentence_transformers import SentenceTransformer
 
 
 @lru_cache(maxsize=1)
 def get_embedding_model() -> SentenceTransformer:
-    return SentenceTransformer(EMBEDDING_MODEL)
+    # Deferred import: sentence_transformers pulls in torch (~20s on cold start).
+    # Keeping it here means the process starts and registers tools instantly;
+    # the model only loads when embed_texts/embed_query is first called.
+    from sentence_transformers import SentenceTransformer as _ST  # noqa: PLC0415
+
+    return _ST(EMBEDDING_MODEL)
 
 
 def embed_texts(texts: list[str]) -> NDArray[np.float32]:

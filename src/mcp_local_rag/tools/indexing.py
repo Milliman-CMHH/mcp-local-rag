@@ -14,12 +14,12 @@ from mcp_local_rag.context import AppContext, Ctx, get_app
 from mcp_local_rag.processing import (
     chunk_text,
     compute_file_hash,
-    embed_texts,
     extract_document,
     ExtractionMethod,
     get_file_mtime,
     is_supported_file,
 )
+from mcp_local_rag.processing.embeddings import embed_texts
 
 logger = logging.getLogger("mcp_local_rag.tools.indexing")
 
@@ -186,6 +186,7 @@ async def index_files(
     extraction_method: ExtractionMethod = "auto",
 ) -> list[FileIndexResult]:
     app = get_app(ctx)
+    await app.await_model_ready()
 
     if not app.metadata_store.collection_exists(collection):
         app.metadata_store.create_collection(collection)
@@ -221,15 +222,15 @@ async def index_directory(
     force: bool = False,
     extraction_method: ExtractionMethod = "auto",
 ) -> list[FileIndexResult]:
-    app = get_app(ctx)
-
+    # Validate path before waiting on model init — cheap check, no app needed.
     directory = Path(directory_path).expanduser()
-
     if not directory.exists():
         raise DirectoryNotFoundError(str(directory))
-
     if not directory.is_dir():
         raise PathNotADirectoryError(str(directory))
+
+    app = get_app(ctx)
+    await app.await_model_ready()
 
     if not app.metadata_store.collection_exists(collection):
         app.metadata_store.create_collection(collection)
@@ -276,6 +277,7 @@ async def remove_documents(
     file_paths: list[str], collection: str, ctx: Ctx
 ) -> list[FileIndexResult]:
     app = get_app(ctx)
+    await app.await_vector_ready()
     results: list[FileIndexResult] = []
 
     for file_path in file_paths:
