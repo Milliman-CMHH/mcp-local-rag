@@ -71,7 +71,7 @@ async def _retry(label: str, coro_fn: Callable[[], Coroutine[Any, Any, None]]) -
 
 
 async def _init_db_stage(app: AppContext) -> None:
-    """Stage 1: initialize SQLite schema and API clients."""
+    """Stage: initialize SQLite schema and API clients."""
     # Gemini client (cheap object creation)
     if api_key := os.environ.get("GEMINI_API_KEY"):
         from google import genai  # noqa: PLC0415
@@ -110,71 +110,60 @@ async def _init_db_stage(app: AppContext) -> None:
     logger.info("DB stage complete")
 
 
+async def _init_vector_stage(app: AppContext) -> None:
+    """Stage: connect to Qdrant and ensure the collection exists."""
+    # Triggers the lazy client property + _ensure_collection_once.
+    await asyncio.to_thread(app.vector_store._ensure_collection_once)  # noqa: SLF001
+    logger.info("Vector store connected and collection ready")
+
+
 async def _init_model_stage() -> None:
-    """Stage 2: load the embedding model into the LRU cache."""
+    """Stage: load the embedding model into the LRU cache."""
     from mcp_local_rag.processing.embeddings import get_embedding_model
 
     await asyncio.to_thread(get_embedding_model)
     logger.info("Embedding model loaded")
 
 
-async def _background_init(app: AppContext) -> None:
-    """Two-stage background init.  Runs as an asyncio Task.
-
-    Stage 0 (Azure Monitor telemetry) → fire-and-forget, doesn't gate any tools.
-    Stage 1 (DB + clients) → sets _db_ready so lightweight tools unblock.
-    Stage 2 (model warmup)  → sets _model_ready so search/index tools unblock.
-
-    Each stage retries up to _INIT_MAX_ATTEMPTS times with exponential backoff
-    before giving up and recording the error so tool calls get a clear message.
-    """
-    # ── Stage 0: telemetry (non-blocking, doesn't gate tools) ────────────
-    # Run concurrently with stage 1 so the ~30s Azure Monitor handshake
-    # overlaps with DB init rather than preceding it.
-    telemetry_task = asyncio.create_task(
-        configure_azure_monitor_async(), name="azure-monitor-init"
-    )
-
-    # ── Stage 1 ──────────────────────────────────────────────────────────
-    logger.info("Background init: starting DB stage")
+async def _run_stage(
+    label: str,
+    coro_fn: Callable[[], Coroutine[Any, Any, None]],
+    mark_done: Callable[[BaseException | None], None],
+) -> None:
+    """Run a single init stage with retry, then mark its readiness gate."""
     try:
-        await _retry("DB init", lambda: _init_db_stage(app))
+        await _retry(label, coro_fn)
+        mark_done(None)
     except Exception as exc:
-        app._db_error = exc  # noqa: SLF001
-        logger.error("DB init permanently failed — tools requiring DB will error")
-    finally:
-        app._db_ready.set()  # noqa: SLF001
-        # If DB failed, there's no point loading the model either.
-        if app._db_error is not None:  # noqa: SLF001
-            app._model_error = app._db_error  # noqa: SLF001
-            app._model_ready.set()  # noqa: SLF001
-            # Still clean up the telemetry task before returning.
-            try:
-                await telemetry_task
-            except Exception:
-                logger.warning("Azure Monitor telemetry setup failed", exc_info=True)
-            return
+        mark_done(exc)
+        logger.error("%s permanently failed — related tools will error", label)
 
-    # ── Stage 2 ──────────────────────────────────────────────────────────
-    logger.info("Background init: starting model warmup stage")
+
+async def _telemetry_wrapper() -> None:
+    """Run Azure Monitor telemetry setup; log failures but never propagate."""
     try:
-        await _retry("Model warmup", _init_model_stage)
-    except Exception as exc:
-        app._model_error = exc  # noqa: SLF001
-        logger.error(
-            "Embedding model load permanently failed — search/index tools will error"
-        )
-    finally:
-        app._model_ready.set()  # noqa: SLF001
-
-    if app._model_error is None:  # noqa: SLF001
-        logger.info("Background init complete — all tools ready")
-
-    # Let the telemetry task finish (or fail) without blocking tool calls.
-    try:
-        await telemetry_task
+        await configure_azure_monitor_async()
     except Exception:
         logger.warning("Azure Monitor telemetry setup failed", exc_info=True)
+
+
+async def _background_init(app: AppContext) -> None:
+    """Concurrent background init.  Runs as an asyncio Task.
+
+    All stages run in parallel via asyncio.gather:
+    - DB (SQLite + API clients) → app.mark_db_ready()
+    - Vector (Qdrant connect + collection) → app.mark_vector_ready()
+    - Model (embedding warmup) → app.mark_model_ready()
+    - Telemetry (Azure Monitor) → fire-and-forget
+
+    Tool functions gate on the appropriate await_*_ready() method.
+    """
+    await asyncio.gather(
+        _run_stage("DB init", lambda: _init_db_stage(app), app.mark_db_ready),
+        _run_stage("Vector store", lambda: _init_vector_stage(app), app.mark_vector_ready),
+        _run_stage("Model warmup", _init_model_stage, app.mark_model_ready),
+        _telemetry_wrapper(),
+    )
 
 
 @asynccontextmanager

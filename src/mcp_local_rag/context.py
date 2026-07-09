@@ -24,22 +24,43 @@ class AppContext:
     metadata_store: MetadataStore
     vector_store: VectorStore
 
-    # Stage 1: SQLite schema + Azure/Gemini clients ready.
-    # Lightweight tools (list/create/delete collections, list docs) gate here.
+    # ── Readiness gates ─────────────────────────────────────────────────
+    # Each stage sets its event when done. Tool functions await the
+    # appropriate gate before touching the corresponding resource.
+
     _db_ready: asyncio.Event = field(default_factory=asyncio.Event)
     _db_error: BaseException | None = field(default=None)
 
-    # Stage 2: embedding model loaded on top of stage 1.
-    # Heavy tools (search, index) gate here.
+    _vector_ready: asyncio.Event = field(default_factory=asyncio.Event)
+    _vector_error: BaseException | None = field(default=None)
+
     _model_ready: asyncio.Event = field(default_factory=asyncio.Event)
     _model_error: BaseException | None = field(default=None)
+
+    # ── Mark methods (called by _background_init only) ──────────────────
+
+    def mark_db_ready(self, error: BaseException | None = None) -> None:
+        """Signal that the DB stage finished (successfully or not)."""
+        self._db_error = error
+        self._db_ready.set()
+
+    def mark_vector_ready(self, error: BaseException | None = None) -> None:
+        """Signal that the Qdrant connection stage finished."""
+        self._vector_error = error
+        self._vector_ready.set()
+
+    def mark_model_ready(self, error: BaseException | None = None) -> None:
+        """Signal that the embedding model stage finished."""
+        self._model_error = error
+        self._model_ready.set()
+
+    # ── Await methods (called by tool functions) ────────────────────────
 
     async def await_db_ready(self) -> None:
         """Wait until SQLite and API clients are initialized.
 
-        Used by tools that only touch the metadata store or vector store
-        without needing the embedding model (collections, document listing, etc.).
-        Raises a clear error if initialization failed and all retries were exhausted.
+        Used by tools that only touch the metadata store
+        (collections, document listing, etc.).
         """
         await self._db_ready.wait()
         if self._db_error is not None:
@@ -47,14 +68,26 @@ class AppContext:
                 "Server DB initialization failed — see server logs for details"
             ) from self._db_error
 
-    async def await_model_ready(self) -> None:
-        """Wait until the embedding model is loaded (implies DB is also ready).
+    async def await_vector_ready(self) -> None:
+        """Wait until the Qdrant vector store is connected and collection exists.
 
-        Used by tools that embed text: search and indexing.
-        Raises a clear error if either stage failed after all retries.
+        Implies DB is also ready (await_db_ready is called first).
+        Used by tools that touch the vector store: delete, stats, search, index.
         """
-        # Model readiness implies DB readiness; await both in dependency order.
         await self.await_db_ready()
+        await self._vector_ready.wait()
+        if self._vector_error is not None:
+            raise RuntimeError(
+                "Qdrant vector store connection failed — see server logs for details"
+            ) from self._vector_error
+
+    async def await_model_ready(self) -> None:
+        """Wait until the embedding model is loaded.
+
+        Implies vector store is also ready (which implies DB ready).
+        Used by tools that embed text: search and indexing.
+        """
+        await self.await_vector_ready()
         await self._model_ready.wait()
         if self._model_error is not None:
             raise RuntimeError(

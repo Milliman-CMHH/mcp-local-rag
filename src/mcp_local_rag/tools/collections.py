@@ -51,7 +51,7 @@ async def create_collection(name: str, ctx: Ctx) -> None:
 
 async def delete_collection(name: str, ctx: Ctx) -> None:
     app = get_app(ctx)
-    await app.await_db_ready()
+    await app.await_vector_ready()
 
     if not app.metadata_store.collection_exists(name):
         raise CollectionNotFoundError(name)
@@ -75,7 +75,7 @@ async def list_collections(ctx: Ctx) -> list[str]:
 
 async def get_collection_info(name: str, ctx: Ctx) -> CollectionInfo:
     app = get_app(ctx)
-    await app.await_db_ready()
+    await app.await_vector_ready()
     coll = app.metadata_store.get_collection(name)
     if coll is None:
         raise CollectionNotFoundError(name)
