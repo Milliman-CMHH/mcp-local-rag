@@ -8,7 +8,6 @@ import logging
 import os
 from typing import TYPE_CHECKING, Any, AsyncIterator
 
-from google import genai
 from mcp.server.fastmcp import FastMCP
 
 from mcp_local_rag.config import (
@@ -75,6 +74,7 @@ async def _init_db_stage(app: AppContext) -> None:
     """Stage 1: initialise SQLite schema and API clients."""
     # Gemini client (cheap object creation)
     if api_key := os.environ.get("GEMINI_API_KEY"):
+        from google import genai  # noqa: PLC0415
         app.gemini_client = genai.Client(api_key=api_key)
     else:
         logger.warning("GEMINI_API_KEY not set — Gemini OCR functionality disabled")
