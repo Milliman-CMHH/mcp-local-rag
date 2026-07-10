@@ -19,7 +19,13 @@ def get_embedding_model() -> SentenceTransformer:
     # the model only loads when embed_texts/embed_query is first called.
     from sentence_transformers import SentenceTransformer as _ST  # noqa: PLC0415
 
-    return _ST(EMBEDDING_MODEL)
+    # Try loading from local cache first (fast, no network — avoids SSL failures
+    # behind corporate proxies like Zscaler). Fall back to network download only
+    # if the model isn't cached yet (first-ever run).
+    try:
+        return _ST(EMBEDDING_MODEL, local_files_only=True)
+    except OSError:
+        return _ST(EMBEDDING_MODEL)
 
 
 def embed_texts(texts: list[str]) -> NDArray[np.float32]:
