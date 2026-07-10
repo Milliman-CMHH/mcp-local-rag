@@ -100,6 +100,17 @@ class VectorStore:
                 logger.info("Qdrant embedded mode: %s", self.db_path)
         return self._client
 
+    def _check_connection(self) -> None:
+        """Verify Qdrant is reachable with a lightweight API call.
+
+        Uses get_collections() as the connectivity probe. Does not create or
+        inspect the collection — that stays lazy so read-only operations work
+        even before any documents are indexed, and so a transient startup
+        failure here doesn't permanently break all vector-touching tools for
+        the life of the process.
+        """
+        self.client.get_collections()
+
     def _ensure_collection_once(self) -> None:
         """Ensure the Qdrant collection exists. Called lazily on first operation."""
         if self._collection_ready:

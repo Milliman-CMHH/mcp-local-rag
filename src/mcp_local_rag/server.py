@@ -111,10 +111,16 @@ async def _init_db_stage(app: AppContext) -> None:
 
 
 async def _init_vector_stage(app: AppContext) -> None:
-    """Stage: connect to Qdrant and ensure the collection exists."""
-    # Triggers the lazy client property + _ensure_collection_once.
-    await asyncio.to_thread(app.vector_store._ensure_collection_once)  # noqa: SLF001
-    logger.info("Vector store connected and collection ready")
+    """Stage: verify Qdrant is reachable.
+
+    Only does a lightweight connectivity check (GET /). Collection creation
+    remains lazy — it happens on the first add_chunks() call so that read-only
+    operations (search, list, get_info) work even before any documents are
+    indexed, and so a transient startup failure here doesn't permanently break
+    all vector-touching tools for the life of the process.
+    """
+    await asyncio.to_thread(app.vector_store._check_connection)  # noqa: SLF001
+    logger.info("Vector store connected")
 
 
 async def _init_model_stage() -> None:
