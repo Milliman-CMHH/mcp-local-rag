@@ -24,56 +24,31 @@ class AppContext:
     metadata_store: MetadataStore
     vector_store: VectorStore
 
-    # ── Readiness gates ─────────────────────────────────────────────────
-    # Stage 1: SQLite schema + API clients ready.
-    # Lightweight tools (list/create/delete collections, list docs) gate here.
+    # ── DB readiness gate ────────────────────────────────────────────────
+    # SQLite schema init runs synchronously before the lifespan yields, so
+    # this event is set before any tool is ever called.  It exists only to
+    # let tools defensively await it in case the ordering ever changes.
     _db_ready: asyncio.Event = field(default_factory=asyncio.Event)
-    _db_error: BaseException | None = field(default=None)
 
-    # Stage 2: embedding model loaded.
-    # Search and indexing tools gate here.
-    # Note: Qdrant has no startup gate — it is a remote service and should be
-    # retried at each tool call rather than permanently failed at startup.
-    _model_ready: asyncio.Event = field(default_factory=asyncio.Event)
-    _model_error: BaseException | None = field(default=None)
-
-    # ── Mark methods (called by _background_init only) ──────────────────
-
-    def mark_db_ready(self, error: BaseException | None = None) -> None:
-        """Signal that the DB stage finished (successfully or not)."""
-        self._db_error = error
+    def mark_db_ready(self) -> None:
+        """Signal that SQLite schema init completed successfully."""
         self._db_ready.set()
 
-    def mark_model_ready(self, error: BaseException | None = None) -> None:
-        """Signal that the embedding model stage finished."""
-        self._model_error = error
-        self._model_ready.set()
-
-    # ── Await methods (called by tool functions) ────────────────────────
-
     async def await_db_ready(self) -> None:
-        """Wait until SQLite and API clients are initialized.
-
-        Used by all tools — ensures metadata store is ready before any
-        tool touches it.
-        """
+        """Wait until the metadata store is ready.  Fast-path: already set."""
         await self._db_ready.wait()
-        if self._db_error is not None:
-            raise RuntimeError(
-                "Server DB initialization failed — see server logs for details"
-            ) from self._db_error
 
     async def await_model_ready(self) -> None:
-        """Wait until the embedding model is loaded (implies DB is also ready).
+        """Ensure the embedding model is loaded before embedding-dependent tools run.
 
-        Used by tools that embed text: search and indexing.
+        The model is pre-warmed in a background task for fast first-call response.
+        If the background warmup hasn't finished (or previously failed), this call
+        loads the model synchronously in a thread.  lru_cache ensures the load
+        only happens once on success; failed attempts are not cached so they retry.
         """
         await self.await_db_ready()
-        await self._model_ready.wait()
-        if self._model_error is not None:
-            raise RuntimeError(
-                "Embedding model failed to load — see server logs for details"
-            ) from self._model_error
+        from mcp_local_rag.processing.embeddings import get_embedding_model  # noqa: PLC0415
+        await asyncio.to_thread(get_embedding_model)
 
 
 Ctx = Context[ServerSession, AppContext, CallToolRequest]
