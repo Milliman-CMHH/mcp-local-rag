@@ -110,19 +110,6 @@ async def _init_db_stage(app: AppContext) -> None:
     logger.info("DB stage complete")
 
 
-async def _init_vector_stage(app: AppContext) -> None:
-    """Stage: verify Qdrant is reachable.
-
-    Only does a lightweight connectivity check (GET /). Collection creation
-    remains lazy — it happens on the first add_chunks() call so that read-only
-    operations (search, list, get_info) work even before any documents are
-    indexed, and so a transient startup failure here doesn't permanently break
-    all vector-touching tools for the life of the process.
-    """
-    await asyncio.to_thread(app.vector_store._check_connection)  # noqa: SLF001
-    logger.info("Vector store connected")
-
-
 async def _init_model_stage() -> None:
     """Stage: load the embedding model into the LRU cache."""
     from mcp_local_rag.processing.embeddings import get_embedding_model
@@ -156,17 +143,17 @@ async def _telemetry_wrapper() -> None:
 async def _background_init(app: AppContext) -> None:
     """Concurrent background init.  Runs as an asyncio Task.
 
-    All stages run in parallel via asyncio.gather:
+    Two stages run in parallel:
     - DB (SQLite + API clients) → app.mark_db_ready()
-    - Vector (Qdrant connect + collection) → app.mark_vector_ready()
-    - Model (embedding warmup) → app.mark_model_ready()
+    - Model (embedding warmup)  → app.mark_model_ready()
     - Telemetry (Azure Monitor) → fire-and-forget
 
-    Tool functions gate on the appropriate await_*_ready() method.
+    Qdrant has no startup gate: it is a remote service whose connection is
+    retried at each tool call that needs it, rather than being permanently
+    failed if it happens to be unavailable at startup.
     """
     await asyncio.gather(
         _run_stage("DB init", lambda: _init_db_stage(app), app.mark_db_ready),
-        _run_stage("Vector store", lambda: _init_vector_stage(app), app.mark_vector_ready),
         _run_stage("Model warmup", _init_model_stage, app.mark_model_ready),
         _telemetry_wrapper(),
     )
