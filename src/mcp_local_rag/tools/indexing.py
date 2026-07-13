@@ -277,7 +277,6 @@ async def remove_documents(
     file_paths: list[str], collection: str, ctx: Ctx
 ) -> list[FileIndexResult]:
     app = get_app(ctx)
-    await app.await_db_ready()
     results: list[FileIndexResult] = []
 
     for file_path in file_paths:

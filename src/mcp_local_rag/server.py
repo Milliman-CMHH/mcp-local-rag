@@ -29,21 +29,19 @@ logger = logging.getLogger("mcp_local_rag.server")
 
 
 async def _init_app(app: AppContext) -> None:
-    """Initialize API clients and SQLite schema.
+    """Initialize API clients and SQLite schema before the lifespan yields.
 
-    Runs synchronously before the lifespan yields so the MCP initialize
-    handshake only completes once the metadata store is ready.  A failure
-    here aborts startup cleanly rather than letting the server start in a
-    broken state.
+    A failure here aborts startup cleanly: the MCP initialize handshake
+    never completes and VS Code surfaces the error, rather than the server
+    starting in a broken state where every tool call fails.
     """
-    # Gemini client (cheap object creation)
     if api_key := os.environ.get("GEMINI_API_KEY"):
         from google import genai  # noqa: PLC0415
+
         app.gemini_client = genai.Client(api_key=api_key)
     else:
         logger.warning("GEMINI_API_KEY not set — Gemini OCR functionality disabled")
 
-    # Azure DI client
     if AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT:
         try:
             from azure.ai.documentintelligence.aio import DocumentIntelligenceClient
@@ -69,40 +67,36 @@ async def _init_app(app: AppContext) -> None:
                 "install with: uv add mcp-local-rag[azure]"
             )
 
-    # SQLite schema — fast local I/O, must succeed before any tool runs
     await asyncio.to_thread(app.metadata_store._init_db)  # noqa: SLF001
-    app.mark_db_ready()
     logger.info("DB initialized")
 
 
-async def _background_warmup(app: AppContext) -> None:
-    """Best-effort background warmup after the MCP handshake completes.
+async def _background_warmup() -> None:
+    """Best-effort pre-warming after the MCP handshake completes.
 
-    Loads the embedding model into the lru_cache and fires Azure Monitor
-    telemetry setup so they are ready before the first tool call arrives.
-    Failures are logged but never propagate — tools retry these lazily.
+    Loads the embedding model and configures Azure Monitor telemetry so
+    they are ready before the first tool call.  Failures are logged and
+    swallowed — tools retry these lazily on each call.
     """
-    async def _warmup_model() -> None:
-        from mcp_local_rag.processing.embeddings import get_embedding_model  # noqa: PLC0415
-        await asyncio.to_thread(get_embedding_model)
-        logger.info("Embedding model warmed up")
+    from mcp_local_rag.processing.embeddings import get_embedding_model  # noqa: PLC0415
 
-    async def _warmup_model_safe() -> None:
+    async def _model() -> None:
         try:
-            await _warmup_model()
+            await asyncio.to_thread(get_embedding_model)
+            logger.info("Embedding model warmed up")
         except Exception:
             logger.warning(
                 "Background model warmup failed — will retry on first embedding call",
                 exc_info=True,
             )
 
-    async def _telemetry_safe() -> None:
+    async def _telemetry() -> None:
         try:
             await configure_azure_monitor_async()
         except Exception:
             logger.warning("Azure Monitor telemetry setup failed", exc_info=True)
 
-    await asyncio.gather(_warmup_model_safe(), _telemetry_safe())
+    await asyncio.gather(_model(), _telemetry())
 
 
 @asynccontextmanager
@@ -117,15 +111,11 @@ async def app_lifespan(server: FastMCP[AppContext]) -> AsyncIterator[AppContext]
         vector_store=VectorStore(url=QDRANT_URL),  # lazy — no I/O yet
     )
 
-    # DB init runs synchronously: if it fails, initialize never completes
-    # and VS Code surfaces a clean startup error rather than a broken server.
+    # Must succeed before yield: a broken DB means a broken server.
     await _init_app(app)
 
-    # Kick off background warmup (model + telemetry) after yield so the
-    # MCP handshake is not delayed.
-    warmup_task = asyncio.create_task(
-        _background_warmup(app), name="mcp-local-rag-warmup"
-    )
+    # Pre-warm model + telemetry in the background; MCP handshake is not delayed.
+    warmup_task = asyncio.create_task(_background_warmup(), name="mcp-local-rag-warmup")
 
     try:
         yield app
