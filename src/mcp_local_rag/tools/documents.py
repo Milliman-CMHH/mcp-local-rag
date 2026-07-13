@@ -23,7 +23,6 @@ class DocumentSummary(BaseModel):
 
 async def list_documents(collection: str, ctx: Ctx) -> list[DocumentSummary]:
     app = get_app(ctx)
-    await app.await_db_ready()
 
     if not app.metadata_store.collection_exists(collection):
         raise CollectionNotFoundError(collection)
@@ -44,7 +43,6 @@ async def get_document_content(
     file_path: str, collection: str, output_path: str, ctx: Ctx
 ) -> str:
     app = get_app(ctx)
-    await app.await_db_ready()
     abs_path = str(Path(file_path).expanduser().resolve())
     doc = app.metadata_store.get_document_by_path(abs_path, collection)
 
