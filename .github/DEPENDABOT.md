@@ -37,7 +37,8 @@ app's key is only available to jobs that run from `main`.
 
 Repository admins set these. Each is checked by GitHub, not by the workflows.
 
-1. **A GitHub App (the merge app)** in Milliman-CMHH, installed on this
+1. **The merge app:** the shared Milliman-CMHH GitHub App that other
+   Milliman-CMHH repositories use for the same workflows, installed on this
    repository, with these repository permissions:
    - Contents: read and write
    - Pull requests: read and write
@@ -53,7 +54,9 @@ Repository admins set these. Each is checked by GitHub, not by the workflows.
    `MERGE_APP_PRIVATE_KEY` (a private key generated for the app) there, and
    nowhere else: not as a repository or Dependabot secret, and not in the
    `copilot` or `pypi` environments. The app's client ID goes in the
-   **repository** variable `MERGE_APP_CLIENT_ID`; it isn't secret.
+   environment variable `MERGE_APP_CLIENT_ID` in the same environment; it
+   isn't secret. Only the jobs that use `dependabot-automation` can read
+   either.
 3. **The `Main Branch Protection` ruleset** requires:
    - the `CI` status check (source: GitHub Actions);
    - one approving review, with *Require approval of the most recent
