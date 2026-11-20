@@ -145,9 +145,7 @@ jobs:
             gh api "repos/$GITHUB_REPOSITORY/contents/.github/copilot-cli/$file?ref=$GITHUB_SHA" \
               -H 'Accept: application/vnd.github.raw+json' > "$cli/$file"
           done
-          # npm 11.19+ reports the manifests out of sync with --prefix, so run it from there.
-          cd "$cli"
-          npm ci --ignore-scripts
+          npm ci --ignore-scripts --prefix "$cli"
 
       - name: Run Copilot
         env:
