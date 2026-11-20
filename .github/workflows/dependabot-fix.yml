@@ -1,0 +1,344 @@
+name: Dependabot fix
+
+# When `CI` fails on a Dependabot PR, Copilot CLI proposes a fix, the merge app
+# pushes it to the PR, and the people in REVIEWERS are asked to review it. The
+# app's push gets a normal CI run, and `Dependabot auto-merge` won't approve
+# it, so the main ruleset's last-push approval needs a person. Once they
+# approve, the auto-merge queued earlier completes it.
+#
+# Only a failed `pull_request` run on a PR whose commits are all Dependabot's
+# own starts an attempt, so the CI run on the app's fix never starts another.
+# The fix commit carries `[dependabot skip]`, so Dependabot can still rebase
+# the branch, which drops the fix and starts a fresh attempt. A fix that
+# touches .github/workflows/ or .github/actions/ is not pushed; it stays in the
+# run's artifacts.
+#
+# The agent's token can read the repository and make Copilot requests. The code
+# it builds and tests can read that token until the job ends. The Copilot CLI
+# comes from main's .github/copilot-cli, and no setup action writes a cache.
+# Only the hand-off job can write to the repository; it runs no branch code
+# and can't push workflow changes. The app's key is only in the main-only
+# `dependabot-automation` environment.
+
+on:
+  # Runs from main with the default branch's workflow file. The PR's code only
+  # runs in the `fix` job, which has no write access.
+  workflow_run: # zizmor: ignore[dangerous-triggers]
+    workflows: [CI]
+    types: [completed]
+    branches: ["dependabot/**"]
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.workflow_run.head_branch }}
+  cancel-in-progress: false
+
+env:
+  # GitHub logins, comma-separated, asked to review every fix.
+  REVIEWERS: Jozef833,milliman-mk
+
+jobs:
+  target:
+    name: Find the pull request
+    # This repository is public: a fork PR can name its branch dependabot/...,
+    # so the actor and head repository are checked too.
+    if: >-
+      github.event.workflow_run.conclusion == 'failure' &&
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.actor.login == 'dependabot[bot]' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      pr: ${{ steps.find.outputs.pr }}
+      title: ${{ steps.find.outputs.title }}
+    steps:
+      - name: Find an open Dependabot PR still at the failed commit
+        id: find
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          BRANCH: ${{ github.event.workflow_run.head_branch }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          # Dependabot PRs leave workflow_run.pull_requests empty, so look the branch up.
+          pr=$(gh api "repos/$REPO/pulls" -X GET -f head="${REPO%%/*}:$BRANCH" -f state=open \
+            --jq '.[] | select(.user.login == "dependabot[bot]" and .head.sha == "'"$HEAD_SHA"'") | .number')
+          if [[ -z "$pr" ]]; then
+            echo "No open Dependabot PR on $BRANCH at $HEAD_SHA."
+            exit 0
+          fi
+          others=$(gh api "repos/$REPO/pulls/$pr/commits" --paginate --jq '.[] | select(
+              (.author.login // "") != "dependabot[bot]" or
+              (.committer.login // "") != "web-flow" or
+              (.commit.verification.verified | not)
+            ) | .sha')
+          if [[ -n "$others" ]]; then
+            echo "#$pr already carries commits that are not Dependabot's own; leaving it to its reviewer."
+            exit 0
+          fi
+          echo "pr=$pr" >> "$GITHUB_OUTPUT"
+          echo "title=$(gh pr view "$pr" --repo "$REPO" --json title --jq .title)" >> "$GITHUB_OUTPUT"
+
+  fix:
+    name: Propose a fix
+    needs: target
+    if: needs.target.outputs.pr != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      actions: read
+      copilot-requests: write
+    env:
+      HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: lts/*
+          package-manager-cache: false
+
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        # A broken toolchain can be what failed CI; Copilot can still work from the logs.
+        continue-on-error: true
+        with:
+          enable-cache: false
+
+      - name: Collect the failed CI logs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          OUT: ${{ runner.temp }}/dependabot-fix
+        run: |
+          set -euo pipefail
+          mkdir -p "$OUT"
+          # The logs can be missing for a short time after the run completes.
+          for _ in 1 2 3; do
+            gh run view "$RUN_ID" --repo "$GITHUB_REPOSITORY" --log-failed > "$OUT/ci-failure.log" && exit 0
+            sleep 20
+          done
+          echo "::warning::Could not download the failed CI logs; Copilot works without them."
+          echo "The failed CI logs could not be downloaded. Run the checks in ci.yml to find the failure." \
+            > "$OUT/ci-failure.log"
+
+      # Install and run npm outside the checkout, from main's manifests, so the
+      # PR can't choose the CLI that gets the token or configure it with a .npmrc.
+      - name: Install Copilot CLI
+        working-directory: ${{ runner.temp }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          cli="$RUNNER_TEMP/copilot-cli"
+          mkdir -p "$cli"
+          for file in package.json package-lock.json; do
+            gh api "repos/$GITHUB_REPOSITORY/contents/.github/copilot-cli/$file?ref=$GITHUB_SHA" \
+              -H 'Accept: application/vnd.github.raw+json' > "$cli/$file"
+          done
+          npm ci --ignore-scripts --prefix "$cli"
+
+      - name: Run Copilot
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          OUT: ${{ runner.temp }}/dependabot-fix
+          COPILOT: ${{ runner.temp }}/copilot-cli/node_modules/.bin/copilot
+          PR: ${{ needs.target.outputs.pr }}
+          TITLE: ${{ needs.target.outputs.title }}
+        run: |
+          set -euo pipefail
+          prompt="CI failed on Dependabot pull request #$PR, \"$TITLE\". The failed jobs' logs are in
+          $OUT/ci-failure.log, and the CI definition is .github/workflows/ci.yml.
+
+          Find why CI fails and change this repository so it passes. Run the failing checks locally to
+          confirm the fix where you can.
+
+          - Do not weaken, skip, or delete tests or checks.
+          - Do not change anything under .github/workflows/ or .github/actions/; a fix there is not pushed.
+          - This is a Python project managed with uv. Run uv sync --locked before the checks, and run
+            them with uv run --locked as ci.yml does. If you change pyproject.toml, update uv.lock with
+            uv lock; never edit uv.lock by hand.
+          - Prefer changing this repository's code or configuration to work with the new version. Do
+            not downgrade a dependency only to make a failure go away.
+          - If a package this repository depends on declares it does not support the new version yet,
+            do not work around it. Revert this update instead, and in the note name that package and
+            its declared range and recommend closing this pull request and ignoring the update until
+            that package supports it.
+
+          Then write a short note for the reviewer to $OUT/summary.md: what broke, what you changed,
+          and what they should check. If you could not fix it, say why there instead."
+          started=$SECONDS
+          status=0
+          "$COPILOT" -p "$prompt" --allow-all-tools --add-dir "$OUT" --no-ask-user --share "$OUT/session.md" \
+            --usage-output-file "$OUT/usage.json" || status=$?
+          echo "$((SECONDS - started))" > "$OUT/duration-seconds"
+          exit "$status"
+
+      - name: Export the patch
+        if: always()
+        env:
+          OUT: ${{ runner.temp }}/dependabot-fix
+        run: |
+          set -euo pipefail
+          # Leave out caches the checks create, whatever the PR's .gitignore says.
+          printf '%s\n' .pytest_cache/ .ruff_cache/ .mypy_cache/ __pycache__/ node_modules/ .venv/ .coverage htmlcov/ \
+            > "$RUNNER_TEMP/fix-exclude"
+          git -c core.excludesFile="$RUNNER_TEMP/fix-exclude" add -A
+          git diff --cached --binary "$HEAD_SHA" > "$OUT/fix.patch"
+          git diff --cached --stat "$HEAD_SHA"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: dependabot-fix
+          path: |
+            ${{ runner.temp }}/dependabot-fix/fix.patch
+            ${{ runner.temp }}/dependabot-fix/summary.md
+            ${{ runner.temp }}/dependabot-fix/session.md
+            ${{ runner.temp }}/dependabot-fix/usage.json
+            ${{ runner.temp }}/dependabot-fix/duration-seconds
+          if-no-files-found: ignore
+
+  hand-off:
+    name: Push the fix and request review
+    needs: [target, fix]
+    if: always() && needs.target.outputs.pr != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: dependabot-automation
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PR: ${{ needs.target.outputs.pr }}
+      BRANCH: ${{ github.event.workflow_run.head_branch }}
+      HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        continue-on-error: true
+        with:
+          name: dependabot-fix
+          path: ${{ runner.temp }}/dependabot-fix
+
+      # Contents write only: without Workflows write, GitHub also rejects a
+      # push that changes a workflow.
+      - uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        id: merge-app
+        with:
+          client-id: ${{ vars.MERGE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.MERGE_APP_PRIVATE_KEY }}
+          permission-contents: write
+
+      # The app token is kept so the fix can be pushed. Nothing from the
+      # branch runs in this job: the patch is applied with git, not built.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1 # zizmor: ignore[artipacked]
+        with:
+          ref: ${{ github.event.workflow_run.head_branch }}
+          path: target
+          token: ${{ steps.merge-app.outputs.token }}
+          persist-credentials: true
+
+      - name: Push the fix
+        id: push
+        working-directory: target
+        env:
+          PATCH: ${{ runner.temp }}/dependabot-fix/fix.patch
+          APP_SLUG: ${{ steps.merge-app.outputs.app-slug }}
+        run: |
+          set -euo pipefail
+          if [[ ! -s "$PATCH" ]]; then
+            echo "result=no-fix" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          if [[ "$(git rev-parse HEAD)" != "$HEAD_SHA" ]]; then
+            echo "result=stale" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          git apply --index "$PATCH"
+          # Workflows published before review could approve the app's own push.
+          # -z and --no-renames list every path git writes, old names included.
+          # The list is read in full first: with pipefail, grep -q stopping early
+          # on a pipe would fail the pipeline and skip this check.
+          changed=$(git diff --cached --name-only -z --no-renames | tr '\0' '\n')
+          if grep -qiE '^\.github/(workflows|actions)(/|$)' <<< "$changed"; then
+            echo "result=touches-workflows" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          app_id=$(gh api "users/${APP_SLUG}[bot]" --jq .id)
+          git -c user.name="${APP_SLUG}[bot]" \
+              -c user.email="$app_id+${APP_SLUG}[bot]@users.noreply.github.com" \
+              commit -m "fix(deps): make CI pass on #$PR [dependabot skip]"
+          if git push origin "HEAD:$BRANCH"; then
+            echo "result=pushed" >> "$GITHUB_OUTPUT"
+            echo "sha=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+          else
+            echo "result=push-failed" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Comment and label
+        if: always()
+        env:
+          RESULT: ${{ steps.push.outputs.result }}
+          SHA: ${{ steps.push.outputs.sha }}
+          PATCH: ${{ runner.temp }}/dependabot-fix/fix.patch
+          SUMMARY: ${{ runner.temp }}/dependabot-fix/summary.md
+          USAGE: ${{ runner.temp }}/dependabot-fix/usage.json
+          DURATION: ${{ runner.temp }}/dependabot-fix/duration-seconds
+        run: |
+          set -euo pipefail
+          if [[ -z "$RESULT" ]]; then
+            if [[ -s "$PATCH" ]]; then RESULT=push-failed; else RESULT=no-fix; fi
+          fi
+          case "$RESULT" in
+            pushed)      lead="CI failed, and Copilot pushed $SHA to fix it." ;;
+            stale)       lead="CI failed, and Copilot proposed a fix, but the branch moved while it worked. The fix was not pushed." ;;
+            touches-workflows) lead="CI failed, and Copilot proposed a fix that changes workflows. The fix was not pushed; the patch is in the run's artifacts for a person to apply." ;;
+            push-failed) lead="CI failed, and Copilot proposed a fix that could not be pushed." ;;
+            *)           lead="CI failed, and Copilot did not produce a fix." ;;
+          esac
+          {
+            echo "$lead"
+            echo
+            if [[ -s "$SUMMARY" ]]; then cat "$SUMMARY"; echo; fi
+            if [[ -s "$USAGE" ]]; then
+              # The agent ran with the branch's dependencies installed, so only numbers and a cleaned model name get through.
+              jq -r --arg secs "$(tr -dc '0-9' < "$DURATION" 2>/dev/null || true)" '
+                def n: tonumber? // 0;
+                def k: if . >= 1000 then "\(. / 100 | round / 10)k" else tostring end;
+                def dur: round as $s | if $s >= 60 then "\($s / 60 | floor)m \($s % 60)s" else "\($s)s" end;
+                "**Copilot usage**",
+                "",
+                "| Model | Requests | Input tokens | Cached | Output tokens |",
+                "|---|---:|---:|---:|---:|",
+                (.modelMetrics // {} | to_entries[] |
+                  "| \(.key | gsub("[^A-Za-z0-9._:-]"; "")) | \(.value.requests.count | n) | \(.value.usage.inputTokens | n | k) | \(.value.usage.cacheReadTokens | n | k) | \(.value.usage.outputTokens | n | k) |"),
+                "",
+                "Premium requests: \(.totalPremiumRequestCost | n) · AI credits: \(.totalNanoAiu | n / 1e9 * 100 | round / 100) · Model time: \(.totalApiDurationMs | n / 1000 | dur)"
+                  + (if $secs != "" then " · Run time: \($secs | n | dur)" else "" end),
+                ""
+              ' "$USAGE" || printf "Copilot's usage statistics could not be read.\n\n"
+            fi
+            echo "Run, with the patch and Copilot's session as artifacts: $RUN_URL"
+          } > "$RUNNER_TEMP/comment.md"
+          gh pr comment "$PR" --repo "$GITHUB_REPOSITORY" --body-file "$RUNNER_TEMP/comment.md"
+          gh label create dependabot-fix --repo "$GITHUB_REPOSITORY" --color d93f0b \
+            --description "CI failed on a Dependabot update; a person must review" --force
+          gh pr edit "$PR" --repo "$GITHUB_REPOSITORY" --add-label dependabot-fix
+
+      - name: Request review
+        if: always()
+        run: |
+          set -euo pipefail
+          args=()
+          IFS=',' read -ra logins <<< "$REVIEWERS"
+          for login in "${logins[@]}"; do args+=(-f "reviewers[]=$login"); done
+          gh api -X POST "repos/$GITHUB_REPOSITORY/pulls/$PR/requested_reviewers" "${args[@]}" > /dev/null

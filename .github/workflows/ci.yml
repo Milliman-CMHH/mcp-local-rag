@@ -1,0 +1,91 @@
+name: CI
+
+# Lint, typecheck and tests for every PR (Dependabot's included) and every
+# push to main. Only the `CI` job is a required status check; it fails if any
+# job it waits on fails, so jobs can be added or renamed without touching the
+# main ruleset.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  # Without this, a merge queue would wait forever for the required CI check.
+  merge_group:
+
+permissions:
+  contents: read
+
+# A new push to a PR cancels its older run. Other runs are grouped by commit,
+# so a later merge can't replace an earlier merge's queued run.
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  python:
+    name: Python lint, typecheck, tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+
+      # Fails if uv.lock is out of date with pyproject.toml.
+      - name: uv sync
+        run: uv sync --locked
+
+      - name: ruff check
+        run: uv run --locked ruff check .
+
+      - name: ruff format
+        run: uv run --locked ruff format --check .
+
+      - name: pyright
+        run: uv run --locked pyright
+
+      - name: pytest
+        run: uv run --locked pytest tests
+
+  # Dependabot's github-actions updates merge without a person, so every
+  # workflow change gets this check first.
+  workflows:
+    name: Workflow lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+
+      - name: actionlint
+        run: uvx --from "actionlint-py==1.7.12.25" actionlint -color
+
+      # Offline: only the audits that need no API calls. High severity only,
+      # until the older files' medium findings are fixed.
+      - name: zizmor
+        run: uvx "zizmor==1.32.0" --offline --min-severity=high .github/
+
+  ci:
+    name: CI
+    if: always()
+    needs: [python, workflows]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      # A skipped job counts as passing for a required check, so fail
+      # explicitly unless every job succeeded.
+      - name: Check job results
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "Job results: $RESULTS"
+          for result in $RESULTS; do
+            if [ "$result" != "success" ]; then
+              exit 1
+            fi
+          done

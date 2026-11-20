@@ -15,13 +15,7 @@ if TYPE_CHECKING:
     from qdrant_client import QdrantClient
     from qdrant_client.models import (
         Condition,
-        Distance,
-        FieldCondition,
         Filter,
-        MatchValue,
-        PayloadSchemaType,
-        PointStruct,
-        VectorParams,
     )
 
 logger = logging.getLogger("mcp_local_rag.storage.vectors")
@@ -29,11 +23,13 @@ logger = logging.getLogger("mcp_local_rag.storage.vectors")
 
 def _qdrant_client_cls() -> type[QdrantClient]:
     from qdrant_client import QdrantClient as _cls  # noqa: PLC0415
+
     return _cls
 
 
 def _qdrant_models():  # pyright: ignore[reportReturnType]
     from qdrant_client import models as _m  # noqa: PLC0415
+
     return _m
 
 
@@ -188,7 +184,9 @@ class VectorStore:
             self.client.delete(
                 collection_name=self.COLLECTION_NAME,
                 points_selector=m.Filter(
-                    must=[m.FieldCondition(key="doc_id", match=m.MatchValue(value=doc_id))]
+                    must=[
+                        m.FieldCondition(key="doc_id", match=m.MatchValue(value=doc_id))
+                    ]
                 ),
             )
         return count_before
@@ -201,7 +199,9 @@ class VectorStore:
             collection_name=self.COLLECTION_NAME,
             count_filter=m.Filter(
                 must=[
-                    m.FieldCondition(key="collection", match=m.MatchValue(value=collection))
+                    m.FieldCondition(
+                        key="collection", match=m.MatchValue(value=collection)
+                    )
                 ]
             ),
         )
@@ -237,7 +237,8 @@ class VectorStore:
             )
         if doc_ids:
             doc_conditions: list[Condition] = [
-                m.FieldCondition(key="doc_id", match=m.MatchValue(value=d)) for d in doc_ids
+                m.FieldCondition(key="doc_id", match=m.MatchValue(value=d))
+                for d in doc_ids
             ]
             doc_filter: Condition = m.Filter(should=doc_conditions)
             conditions.append(doc_filter)
@@ -273,7 +274,9 @@ class VectorStore:
             collection_name=self.COLLECTION_NAME,
             count_filter=m.Filter(
                 must=[
-                    m.FieldCondition(key="collection", match=m.MatchValue(value=collection))
+                    m.FieldCondition(
+                        key="collection", match=m.MatchValue(value=collection)
+                    )
                 ]
             ),
         )

@@ -21,7 +21,6 @@ from mcp_local_rag.telemetry import configure_azure_monitor_async, configure_log
 from mcp_local_rag.tools import register_tools
 
 if TYPE_CHECKING:
-    from azure.ai.documentintelligence.aio import DocumentIntelligenceClient
     from azure.core.credentials import AzureKeyCredential
     from azure.identity.aio import DefaultAzureCredential
 
@@ -67,7 +66,7 @@ async def _init_app(app: AppContext) -> None:
                 "install with: uv add mcp-local-rag[azure]"
             )
 
-    await asyncio.to_thread(app.metadata_store._init_db)  # noqa: SLF001
+    await asyncio.to_thread(app.metadata_store._init_db)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
     logger.info("DB initialized")
 
 

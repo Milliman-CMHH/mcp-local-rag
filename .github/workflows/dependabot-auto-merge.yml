@@ -1,0 +1,95 @@
+name: Dependabot auto-merge
+
+# Queues a Dependabot PR to merge once `CI` passes, then approves it. Only a PR
+# whose every commit is Dependabot's own is approved. Anything else, such as
+# a Dependabot fix commit, waits for a person.
+#
+# "Dependabot's own" means authored by dependabot[bot], verified, and committed
+# by GitHub (`web-flow`). Anyone with write access can sign a commit with their
+# own key and set its author to dependabot[bot]; the committer check rules that
+# out.
+#
+# The approval names the commit that was checked, so the main ruleset's
+# last-push approval discards it if anything is pushed after. The merge is
+# queued with the merge app's token, which can merge workflow changes
+# (github-actions bumps). Queuing before approving means a failure part-way
+# leaves the PR waiting for a person, never approved with nothing queued.
+#
+# This runs from main and never checks out or runs the PR's code. The app's key
+# is only in the main-only `dependabot-automation` environment, never in a
+# Dependabot secret.
+
+on:
+  # Needed so the job runs from main and can approve. Safe because it never
+  # checks out or runs the PR's code.
+  pull_request_target: # zizmor: ignore[dangerous-triggers]
+    branches: [main]
+    types: [opened, synchronize, reopened]
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  auto-merge:
+    name: Queue and approve
+    # Keyed on who opened the PR. Fork PRs are excluded.
+    if: >-
+      github.event.pull_request.user.login == 'dependabot[bot]' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: dependabot-automation
+    permissions:
+      contents: read
+      pull-requests: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      PR: ${{ github.event.pull_request.number }}
+      HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+    steps:
+      - name: Require Dependabot-only commits
+        id: authors
+        run: |
+          set -euo pipefail
+          current=$(gh pr view "$PR" --repo "$REPO" --json state,headRefOid --jq 'select(.state == "OPEN") | .headRefOid')
+          if [[ "$current" != "$HEAD_SHA" ]]; then
+            echo "#$PR is closed or its head moved; nothing to do."
+            echo "dependabot-only=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          others=$(gh api "repos/$REPO/pulls/$PR/commits" --paginate --jq '.[] | select(
+              (.author.login // "") != "dependabot[bot]" or
+              (.committer.login // "") != "web-flow" or
+              (.commit.verification.verified | not)
+            ) | .sha')
+          if [[ -n "$others" ]]; then
+            echo "#$PR has commits that are not Dependabot's own; leaving it to a person:"
+            echo "$others"
+            echo "dependabot-only=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "dependabot-only=true" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        id: merge-app
+        if: steps.authors.outputs.dependabot-only == 'true'
+        with:
+          client-id: ${{ vars.MERGE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.MERGE_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+          permission-workflows: write
+
+      - name: Queue auto-merge
+        if: steps.authors.outputs.dependabot-only == 'true'
+        env:
+          GH_TOKEN: ${{ steps.merge-app.outputs.token }}
+        run: gh pr merge "$PR" --repo "$REPO" --auto --squash --match-head-commit "$HEAD_SHA"
+
+      - name: Approve
+        if: steps.authors.outputs.dependabot-only == 'true'
+        run: gh api "repos/$REPO/pulls/$PR/reviews" -f commit_id="$HEAD_SHA" -f event=APPROVE --silent

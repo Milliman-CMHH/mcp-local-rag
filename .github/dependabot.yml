@@ -20,3 +20,15 @@ updates:
     groups:
       all:
         patterns: ["*"]
+
+  # Copilot CLI used by the Dependabot fix workflow.
+  - package-ecosystem: npm
+    directory: /.github/copilot-cli
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: "deps(copilot-cli):"
+    open-pull-requests-limit: 1
+    # CI never runs the CLI, so wait a week for a bad release to be pulled.
+    cooldown:
+      default-days: 7

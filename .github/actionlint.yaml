@@ -1,0 +1,5 @@
+# actionlint doesn't know this permission yet; the Copilot CLI needs it.
+paths:
+  .github/workflows/dependabot-fix.yml:
+    ignore:
+      - 'unknown permission scope "copilot-requests"'
