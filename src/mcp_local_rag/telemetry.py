@@ -30,7 +30,7 @@ def configure_logging() -> None:
     logger.setLevel(logging.INFO)
     # Guard against duplicate handlers if called more than once (e.g. in tests).
     if not any(
-        isinstance(h, logging.StreamHandler) and h.stream is sys.stderr
+        isinstance(h, logging.StreamHandler) and h.stream is sys.stderr  # pyright: ignore[reportUnknownMemberType]
         for h in logger.handlers
     ):
         handler = logging.StreamHandler(sys.stderr)

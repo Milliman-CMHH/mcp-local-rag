@@ -28,7 +28,6 @@ if TYPE_CHECKING:
     from google import genai
     from google.genai import errors
     from google.genai.types import MediaResolution
-    from markitdown import MarkItDown
     from azure.ai.documentintelligence.aio import DocumentIntelligenceClient
     from azure.ai.documentintelligence.models import (
         AnalyzeResult,
@@ -41,6 +40,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger("mcp_local_rag.processing.extractors")
 
 ExtractionMethod = Literal["auto", "azure", "gemini", "pymupdf"]
+
 
 @dataclass
 class ExtractedDocument:
@@ -113,7 +113,6 @@ async def _gemini_ocr_pdf_page(
     gemini_client: genai.Client,
     media_resolution: MediaResolution | None = None,
 ) -> str:
-    import aiofiles  # noqa: PLC0415
     from google.genai import types as _types  # noqa: PLC0415
     from google.genai.types import MediaResolution as _MR  # noqa: PLC0415
 

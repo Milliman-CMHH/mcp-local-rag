@@ -39,5 +39,6 @@ def embed_query(query: str) -> NDArray[np.float32]:
 
 def get_embedding_dimension() -> int | None:
     model = get_embedding_model()
-    dim = model.get_sentence_embedding_dimension()
+    # get_embedding_dimension() is missing from older sentence-transformers 5.x.
+    dim = model.get_sentence_embedding_dimension()  # pyright: ignore[reportDeprecated]
     return dim
